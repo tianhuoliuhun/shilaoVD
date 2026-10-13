@@ -1,0 +1,74 @@
+[
+  {
+    "step": "abogus",
+    "len": 180,
+    "sample": "dyUfDzUiOZ5bKdKt8OcA9G1UOZnANT8y4NidSn1KS5YYL1lYu8P7zcc0GoK8"
+  },
+  {
+    "label": "A: tab/feed (推荐, 未登录)",
+    "url": "https://www.douyin.com/aweme/v1/web/tab/feed/?device_platform=webapp&aid=6383&channel=channel_pc_web&update_version_code=170400&pc_client_type=1&pc_libra_divert",
+    "status": 200,
+    "ms": 1737,
+    "bytes": 238954,
+    "status_code": 0,
+    "aweme_count": 2,
+    "first": {
+      "aweme_id": "7679327437762727219",
+      "desc": "石板煎牛排+锡纸烤土豆 抓住今天的机会，别等明天后悔 #助眠 #石板煎牛排 #满级吃商通关赛 #锡纸烤土豆 #治愈",
+      "author": "晚安食光机"
+    },
+    "ids": [
+      "7679327437762727219",
+      "7677165526757494051"
+    ]
+  },
+  {
+    "label": "B: tab/feed refresh_index=2",
+    "url": "https://www.douyin.com/aweme/v1/web/tab/feed/?device_platform=webapp&aid=6383&channel=channel_pc_web&update_version_code=170400&pc_client_type=1&pc_libra_divert",
+    "status": 200,
+    "ms": 1469,
+    "bytes": 581809,
+    "status_code": 0,
+    "aweme_count": 6,
+    "first": {
+      "aweme_id": "7694980946960895267",
+      "desc": "站在伸夫的角度看：天都塌了 #动漫 #动漫推荐 #动漫解说 #我在抖音看动漫 #抖音精选App次元季",
+      "author": "三叶动漫屋"
+    },
+    "ids": [
+      "7694980946960895267",
+      "7695815002300630120",
+      "7684029207320543154",
+      "7684245751425142070",
+      "7692725411565972367",
+      "7695660015218134307"
+    ]
+  },
+  {
+    "label": "C: module/feed",
+    "url": "https://www.douyin.com/aweme/v1/web/module/feed/?device_platform=webapp&aid=6383&channel=channel_pc_web&update_version_code=170400&pc_client_type=1&pc_libra_div",
+    "status": 200,
+    "ms": 216,
+    "bytes": 108,
+    "status_code": 4,
+    "status_msg": "啊哦，服务器打瞌睡了，再试一次吧～",
+    "aweme_count": 0
+  },
+  {
+    "label": "D: v2 module/feed",
+    "url": "https://www.douyin.com/aweme/v2/web/module/feed/?device_platform=webapp&aid=6383&channel=channel_pc_web&update_version_code=170400&pc_client_type=1&pc_libra_div",
+    "status": 404,
+    "ms": 70,
+    "bytes": 23,
+    "head": "Unsupported path(Janus)"
+  },
+  {
+    "label": "E: home/channel/setting (频道表)",
+    "url": "https://www.douyin.com/aweme/v1/web/home/channel/setting/?device_platform=webapp&aid=6383&channel=channel_pc_web&update_version_code=170400&pc_client_type=1&pc_",
+    "status": 200,
+    "ms": 106,
+    "bytes": 921,
+    "status_code": 0,
+    "aweme_count": 0
+  }
+]

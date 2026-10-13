@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  myDVQ 唯一页面：全屏视频流。
+
+  对照原基座：删掉了左上角"可见返回键"（本项目没有主屏可返回，系统返回即退出应用）
+  和整条底部/顶部操作区。留下的只有：上下滑容器 + 状态提示 + 加载圈。
+
+  状态提示说明：不识字的使用者看不懂这些字，但它承担"卡住了还是在加载"的判断，
+  且只在加载/失败/没有更多时短暂出现 —— 正常播放时一律收起，不遮挡画面。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <com.laorendouyin.app.widget.VerticalViewPager
+        android:id="@+id/vvp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/tv_feed_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="@color/scrim"
+        android:paddingHorizontal="@dimen/s4"
+        android:paddingVertical="@dimen/s2"
+        android:textColor="@color/accent"
+        android:textSize="@dimen/t_caption"
+        android:visibility="gone" />
+
+    <!-- 加载小圆圈：首屏要等签名 + 拉流，内容区正中给个在转的指示器，
+         比只有一行字更让人确信"它没死" -->
+    <include layout="@layout/include_loading" />
+
+</FrameLayout>

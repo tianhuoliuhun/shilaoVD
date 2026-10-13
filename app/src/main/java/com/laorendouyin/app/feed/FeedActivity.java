@@ -1,0 +1,662 @@
+package com.laorendouyin.app.feed;
+
+// 源自 DKVideoPlayer demo 的 TikTok2Activity（Apache-2.0，Copyright Doikki）——
+// 官方推荐的仿抖音实现：VerticalViewPager 上下滑 + AndroidVideoCache 预加载 + 单播放器复用。
+//
+// myDVQ 改造（对照原基座「腕上音符」的删减清单）：
+//   删：点赞 / 收藏 / 评论 / 分享 / 作者主页（原走 WebView 引擎）
+//   删：全屏开关、双指缩放、手动旋转、全屏手势层
+//   删：暂停与进度条（点画面什么都不发生）
+//   删：标题与作者名等一切文字覆盖层
+//   删：可见返回键（页面就是全部，系统返回即退出）
+//   删：外部塞列表播放的"预置模式"（「我的」页已随互动一起移除）
+//   增：**按屏幕方向分流** —— 竖屏只刷竖屏视频，横屏只刷横屏视频（见 onConfigurationChanged）
+//   增：**沉浸式全屏** —— 挡掉系统手势误触（横屏上滑 = 系统"回主屏"）
+//   增：**转屏保活** —— 换流时当前视频接着播，不重新加载（见 mKeepVideo / startPlay）
+//   留：上下滑、单播放器复用、预加载、跨会话去重、翻页游标持久化
+//
+// License: Apache-2.0（见 lib/LICENSE-DKVideoPlayer.txt）
+
+import android.content.res.Configuration;
+import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
+
+import androidx.viewpager.widget.ViewPager;
+
+import com.laorendouyin.app.R;
+import com.laorendouyin.app.cache.PreloadManager;
+import com.laorendouyin.app.net.DouyinApi;
+import com.laorendouyin.app.ui.UiActivity;
+import com.laorendouyin.app.widget.VerticalViewPager;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
+import xyz.doikki.videoplayer.player.VideoView;
+
+public class FeedActivity extends UiActivity {
+
+    /** 当前播放位置 */
+    private int mCurPos;
+    /**
+     * 面向屏幕方向的"应用级缓存"：重进页面直接放上次刷到的视频，避免"每次进来都是那两条老视频"。
+     * ⚠️ 只缓存**当前方向**的内容（横竖屏切换时会清空，两个方向的流不能混）。
+     */
+    private static final List<FeedVideo> sCache = new ArrayList<>();
+    private DouyinApi mApi;
+
+    /**
+     * 当前要走哪一个方向的信息流（由屏幕方向决定）。
+     * true = 横屏信息流，false = 竖屏信息流。
+     */
+    private boolean mWantLandscape;
+
+    /**
+     * 转屏保活：切方向时**必须留在列表里**的那个视频（= 用户正在看的那个）。
+     *
+     * 为什么需要它：换流会把列表整批清掉，如果当前视频也跟着没了，播放器就得重新
+     * setUrl、从头缓冲 —— 用户看到的就是"转个屏，正在看的视频重头加载了"。
+     * 现在把它单独拎出来放回列表首位，播放器那一路走"只搬视图、不重载"的分支。
+     * 第一页新数据到货后置空（用掉即弃，避免用户滑走后它还赖在首位）。
+     */
+    private FeedVideo mKeepVideo;
+
+    /**
+     * 当前正在播的视频 id。转屏挂载时用它判断"要挂的是不是同一个视频"：
+     * 是 → 只把播放器搬到新位置，**不 release、不 setUrl**（播放不中断）。
+     */
+    private String mPlayingAwemeId = "";
+
+    /**
+     * 连续多少页"被过滤掉、一条都没留下"。
+     * 过滤有两个来源：看过的（SeenStore）、方向不对的（竖屏模式下的横屏视频等）。
+     * 没有上限的话，服务端要是持续返回同一种，就是"转圈不停 + 静默无限翻页"。
+     */
+    private int mEmptyPages;
+    /** 自动补拉的上限（一页最多 10 条，5 页≈几十条都不合适就停，别无限刷） */
+    private static final int MAX_EMPTY_PAGES = 5;
+    private volatile boolean mLoading;
+    private final List<FeedVideo> mVideoList = new ArrayList<>();
+    private FeedAdapter mAdapter;
+    private VerticalViewPager mViewPager;
+    private PreloadManager mPreloadManager;
+    private TikTokController mController;
+    private VideoView mVideoView;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_feed);
+        // 先定方向：后面拉流、过滤、缓存全按它走
+        mWantLandscape = isLandscapeScreen();
+        com.laorendouyin.app.util.AppLog.i("feed", "启动方向：" + (mWantLandscape ? "横屏" : "竖屏") + "信息流");
+        initViewPager();
+        initVideoView();
+        mPreloadManager = PreloadManager.getInstance(this);
+
+        loadCacheOrEmpty();
+        showHint("正在加载…");
+        loadFeed();
+        mViewPager.post(new Runnable() {
+            @Override
+            public void run() {
+                startPlay(0);
+            }
+        });
+    }
+
+    // ---------- 方向分流 ----------
+
+    /** 当前屏幕是不是横着的 */
+    private boolean isLandscapeScreen() {
+        return getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+    }
+
+    private DouyinApi.FeedMode feedMode() {
+        return mWantLandscape ? DouyinApi.FeedMode.LANDSCAPE : DouyinApi.FeedMode.PORTRAIT;
+    }
+
+    /**
+     * 屏幕方向变了 → 换成对应方向的信息流。
+     *
+     * Manifest 里 configChanges 含 orientation，所以旋转**不会重建 Activity**
+     * （重建会连播放器一起毁掉、还要重新拉流，体验很差），旋转事件走这里。
+     *
+     * ⚠️ 关键约束（用户明确要求）：**当前正在看的视频不许重新加载**。所以这里：
+     *   ① 先把当前视频拎出来（mKeepVideo），清列表后放回首位 —— 保证它还在列表里；
+     *   ② 绝不对播放器调 release()；
+     *   ③ 重新挂载时 startPlay 会认出"还是同一个视频"，只搬视图、不重设 URL。
+     * 其余内容按新方向重新拉（两套参数的内容池不同：实测横屏流 93% 横屏、竖屏流 75% 竖屏）。
+     */
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        boolean landscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE;
+        if (landscape == mWantLandscape) return;
+
+        // ① 拎出当前视频（此刻列表还是旧方向的）
+        final FeedVideo current = (mCurPos >= 0 && mCurPos < mVideoList.size())
+                ? mVideoList.get(mCurPos) : null;
+        if (current != null) mKeepVideo = current;
+
+        mWantLandscape = landscape;
+        com.laorendouyin.app.util.AppLog.i("feed", "屏幕转向 → 切换到"
+                + (mWantLandscape ? "横屏" : "竖屏") + "信息流"
+                + (current == null ? "（无在播视频）" : "（保活 " + current.awemeId + "）"));
+
+        // ② 换流：列表与缓存换成新方向的内容；**播放器不动**
+        mVideoList.clear();
+        sCache.clear();
+        mEmptyPages = 0;
+        if (current != null) {
+            mVideoList.add(current);   // 当前视频留在首位 → 播放器有地方可待
+            mCurPos = 0;
+            mViewPager.setCurrentItem(0, false);
+            mAdapter.notifyDataSetChanged();
+            // 重新挂载（转屏会让 item 重新布局；startPlay 会识别出"同一个视频"而只搬视图）
+            startPlay(0);
+            clearHint();
+        } else {
+            mAdapter.notifyDataSetChanged();
+            mViewPager.setCurrentItem(0, false);
+            com.laorendouyin.app.ui.Loading.show(this, true);
+        }
+        loadMore(true);
+    }
+
+    /**
+     * 四态反馈统一出口：有事说事，没事收起来——刷视频页全屏，
+     * 提示行常驻会一直压在画面上。
+     */
+    private void showHint(String text) {
+        android.widget.TextView hint = findViewById(R.id.tv_feed_hint);
+        if (hint == null) return;
+        hint.setText(text);
+        hint.setVisibility(View.VISIBLE);
+    }
+
+    private void clearHint() {
+        android.widget.TextView hint = findViewById(R.id.tv_feed_hint);
+        if (hint != null) hint.setVisibility(View.GONE);
+    }
+
+    /** 网络优先加载真实 Feed，分页：抖音每页只回几条 */
+    private void loadFeed() {
+        loadMore(true);
+    }
+
+    /**
+     * 懒建 DouyinApi（签名 JS + 两个方向各自的翻页游标）；只在后台线程调。
+     * myDVQ：**不注入任何登录态** —— 全程游客身份，只靠 ttwid + a_bogus。
+     */
+    private DouyinApi ensureApi() throws Exception {
+        if (mApi != null) return mApi;
+        java.util.List<String> js = java.util.Arrays.asList(
+                readAll(getAssets().open("sign/utils.js")),
+                readAll(getAssets().open("sign/sm3.js")),
+                readAll(getAssets().open("sign/vm_decode.js")));
+        mApi = new DouyinApi(new com.laorendouyin.app.sign.Signer(js));
+        // 翻页游标持久化：两个方向各存一份（切横竖屏不该互相干扰）
+        android.content.SharedPreferences sp = getSharedPreferences("feed_state", MODE_PRIVATE);
+        mApi.setRefreshIndex(DouyinApi.FeedMode.LANDSCAPE, sp.getInt(cursorKey(DouyinApi.FeedMode.LANDSCAPE), 0));
+        mApi.setRefreshIndex(DouyinApi.FeedMode.PORTRAIT, sp.getInt(cursorKey(DouyinApi.FeedMode.PORTRAIT), 0));
+        return mApi;
+    }
+
+    private static String cursorKey(DouyinApi.FeedMode mode) {
+        return "refresh_index_" + mode.name().toLowerCase();
+    }
+
+    private void loadMore(final boolean first) {
+        // 页面已经在关：别再起新的网络请求（补拉的延时任务会走到这里）
+        if (isFinishing() || isDestroyed()) return;
+        if (mLoading) return;
+        mLoading = true;
+        if (first) com.laorendouyin.app.ui.Loading.show(this, true);
+        final DouyinApi.FeedMode mode = feedMode();
+        com.laorendouyin.app.util.AppLog.i("feed", "拉取下一页（" + mode + "，已 " + mVideoList.size() + " 条）");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final java.util.List<FeedVideo> list = ensureApi().fetchFeed(10, mode);
+                    // 游标落盘（按方向分开存）
+                    getSharedPreferences("feed_state", MODE_PRIVATE).edit()
+                            .putInt(cursorKey(mode), mApi.getRefreshIndex(mode)).apply();
+                    com.laorendouyin.app.util.AppLog.i("feed", "本页拿到 " + list.size() + " 条（"
+                            + mode + " 游标=" + mApi.getRefreshIndex(mode) + "）");
+                    int cov = 0;
+                    for (FeedVideo v : list) {
+                        if (v.coverUrl != null && !v.coverUrl.isEmpty()) cov++;
+                    }
+                    com.laorendouyin.app.util.AppLog.i("feed", "本页封面 " + cov + "/" + list.size() + " 条");
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            mLoading = false;
+                            // 列表里若还混着别的方向/缓存的项（URL 是上次会话烤的，签名早过期→必死链），
+                            // 首批真数据到货就整批换掉，否则播放器会一直卡在放不出画面的垫场项上。
+                            boolean hasStale = false;
+                            for (FeedVideo v : mVideoList) {
+                                if (v.awemeId == null || v.awemeId.isEmpty()) { hasStale = true; break; }
+                            }
+                            int added = applyNewItems(list, first || hasStale);
+                            com.laorendouyin.app.util.AppLog.i("feed", "新面孔 " + added + "/" + list.size()
+                                    + " 条（共 " + mVideoList.size() + "）");
+                            // notifyDataSetChanged 会重建页面视图 → 无条件重挂当前播放
+                            startPlay(mViewPager.getCurrentItem());
+                            if (list.isEmpty()) {
+                                mEmptyPages = 0;
+                                showHint("没有更多了");
+                                com.laorendouyin.app.ui.Loading.show(FeedActivity.this, false);
+                            } else if (added == 0) {
+                                // 本页一条都没留下（全看过 or 方向都不对）→ 自动补拉下一页
+                                mEmptyPages++;
+                                com.laorendouyin.app.util.AppLog.i("feed", "本页无可播内容"
+                                        + (mWantLandscape ? "（要横屏）" : "（要竖屏）")
+                                        + "，自动补拉（第 " + mEmptyPages + "/" + MAX_EMPTY_PAGES + " 页）");
+                                if (mEmptyPages >= MAX_EMPTY_PAGES) {
+                                    com.laorendouyin.app.util.AppLog.i("feed", "连续 " + MAX_EMPTY_PAGES
+                                            + " 页无可播内容，停止自动补拉");
+                                    showHint(mWantLandscape ? "暂时没有更多横屏视频" : "暂时没有更多竖屏视频");
+                                    com.laorendouyin.app.ui.Loading.show(FeedActivity.this, false);
+                                } else {
+                                    mViewPager.postDelayed(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            if (isFinishing() || isDestroyed()) return;
+                                            loadMore(false);
+                                        }
+                                    }, 300);
+                                }
+                            } else {
+                                mEmptyPages = 0;
+                                // 有内容就不占画面（全屏刷视频，提示行压在画面上很碍事）
+                                clearHint();
+                                com.laorendouyin.app.ui.Loading.show(FeedActivity.this, false);
+                            }
+                        }
+                    });
+                } catch (Exception e) {
+                    com.laorendouyin.app.util.AppLog.i("feed", "网络加载失败: " + e);
+                    final String err = String.valueOf(e);
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            mLoading = false;
+                            mEmptyPages = 0;   // 失败就重新开始计数，别把上一次的失败算进上限
+                            com.laorendouyin.app.ui.Loading.show(FeedActivity.this, false);
+                            if (isFinishing() || isDestroyed()) return;
+                            showHint((first ? "网络加载失败，稍后自动重试" : "翻页失败: ") + err);
+                            // 首屏失败自动重试（老人不会去点"重试"按钮——本项目也没有按钮）
+                            if (first) {
+                                mViewPager.postDelayed(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        if (isFinishing() || isDestroyed()) return;
+                                        loadMore(true);
+                                    }
+                                }, 5000);
+                            }
+                        }
+                    });
+                }
+            }
+        }, "feed-load").start();
+    }
+
+    private void initVideoView() {
+        mVideoView = new VideoView(this);
+        mVideoView.setLooping(true);
+        // 竖屏视频居中裁剪、横屏默认显示（demo 的 TikTokRenderView 行为）
+        mVideoView.setRenderViewFactory(TikTokRenderViewFactory.create());
+        mController = new TikTokController(this);
+        mVideoView.setVideoController(mController);
+        // 锁死"不跟随设备传感器转屏"：本项目转屏由**屏幕方向 → 换流**来做，
+        // 不允许播放器自己把画面转成横屏（那会绕过上面的分流逻辑）。
+        mController.setEnableOrientation(false);
+
+        // 播放器状态全量落日志（真机教训：拉流失败被静默吞掉=只显封面，无日志根本查不出）
+        mVideoView.addOnStateChangeListener(new VideoView.OnStateChangeListener() {
+            @Override
+            public void onPlayerStateChanged(int playerState) {
+                com.laorendouyin.app.util.AppLog.i("feed", "播放器状态: " + playerStateName(playerState));
+            }
+
+            @Override
+            public void onPlayStateChanged(int playState) {
+                com.laorendouyin.app.util.AppLog.i("feed", "播放状态: " + playerStateName(playState));
+            }
+        });
+    }
+
+    private static String playerStateName(int s) {
+        switch (s) {
+            case VideoView.STATE_IDLE: return "IDLE";
+            case VideoView.STATE_PREPARING: return "PREPARING(缓冲中)";
+            case VideoView.STATE_PREPARED: return "PREPARED";
+            case VideoView.STATE_PLAYING: return "PLAYING(首帧已渲染)";
+            case VideoView.STATE_PAUSED: return "PAUSED";
+            case VideoView.STATE_BUFFERING: return "BUFFERING";
+            case VideoView.STATE_BUFFERED: return "BUFFERED";
+            case VideoView.STATE_PLAYBACK_COMPLETED: return "COMPLETED";
+            case VideoView.STATE_ERROR: return "ERROR(播放失败)";
+            default: return "state=" + s;
+        }
+    }
+
+    private void initViewPager() {
+        mViewPager = findViewById(R.id.vvp);
+        mViewPager.setOffscreenPageLimit(3);
+        mAdapter = new FeedAdapter(mVideoList);
+        mViewPager.setAdapter(mAdapter);
+        mViewPager.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        mViewPager.setOnPageChangeListener(new ViewPager.SimpleOnPageChangeListener() {
+
+            private int mCurItem;
+            private boolean mIsReverseScroll;
+
+            @Override
+            public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
+                if (position == mCurItem) {
+                    return;
+                }
+                mIsReverseScroll = position < mCurItem;
+            }
+
+            @Override
+            public void onPageSelected(final int position) {
+                if (position == mCurPos) return;
+                // 等 ViewPager populate 完成（新页实例化）再挂播放器
+                mViewPager.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        startPlay(position);
+                    }
+                });
+                // 快到底时预取下一页
+                if (position >= mVideoList.size() - 2) {
+                    loadMore(false);
+                }
+            }
+
+            @Override
+            public void onPageScrollStateChanged(int state) {
+                if (state == VerticalViewPager.SCROLL_STATE_DRAGGING) {
+                    mCurItem = mViewPager.getCurrentItem();
+                }
+                if (state == VerticalViewPager.SCROLL_STATE_IDLE) {
+                    mPreloadManager.resumePreload(mCurPos, mIsReverseScroll);
+                } else {
+                    mPreloadManager.pausePreload(mCurPos, mIsReverseScroll);
+                }
+            }
+        });
+    }
+
+    private void startPlay(int position) {
+        startPlay(position, 0);
+    }
+
+    /**
+     * 挂载播放器到指定页。三个真机踩过的坑：
+     * ① notifyDataSetChanged 会重建当前页视图、冲掉已挂的播放器 → 数据变更后必须重挂；
+     * ② onPageSelected 时新页可能尚未实例化 → 找不到视图不能静默放弃，要重试；
+     * ③ **转屏换流后要挂的还是同一个视频** → 只搬视图，绝不 release + setUrl
+     *    （否则用户正在看的视频会从头缓冲一遍 —— 这是明确要求避免的）。
+     */
+    private void startPlay(final int position, final int attempt) {
+        if (position < 0 || position >= mVideoList.size()) return;
+        int count = mViewPager.getChildCount();
+        for (int i = 0; i < count; i++) {
+            View itemView = mViewPager.getChildAt(i);
+            FeedAdapter.ViewHolder viewHolder = (FeedAdapter.ViewHolder) itemView.getTag();
+            if (viewHolder != null && viewHolder.mPosition == position) {
+                FeedVideo video = mVideoList.get(position);
+
+                // ③ 转屏保活：要挂的就是当前正在播的那个 → 只搬视图，播放不中断
+                if (isSameAsPlaying(video)) {
+                    if (mVideoView.getParent() instanceof ViewGroup) {
+                        ((ViewGroup) mVideoView.getParent()).removeView(mVideoView);
+                    }
+                    if (mVideoView.getParent() != viewHolder.mPlayerContainer) {
+                        viewHolder.mPlayerContainer.addView(mVideoView, 0);
+                    }
+                    mController.addControlComponent(viewHolder.mTikTokView, true);
+                    mCurPos = position;
+                    com.laorendouyin.app.util.AppLog.i("feed", "转屏保活：沿用同一播放器，不重新加载 "
+                            + video.awemeId);
+                    return;
+                }
+
+                mVideoView.release();
+                if (mVideoView.getParent() instanceof ViewGroup) {
+                    ((ViewGroup) mVideoView.getParent()).removeView(mVideoView);
+                }
+
+                // 播放即记账（真正的"看过"信号，喂给 SeenStore 做跨会话去重）
+                if (video.awemeId != null && !video.awemeId.isEmpty()) {
+                    SeenStore.markSeen(this, java.util.Collections.singletonList(video.awemeId));
+                    // 给「看过」留一份可读记录（去重账本只存 id，显示要标题和封面）
+                    HistoryStore.mark(this, video.awemeId, video.title, video.coverUrl);
+                }
+                String playUrl = mPreloadManager.getPlayUrl(video.playUrl);
+                mVideoView.setUrl(playUrl, DouyinApi.playHeaders());
+                mController.addControlComponent(viewHolder.mTikTokView, true);
+                viewHolder.mPlayerContainer.addView(mVideoView, 0);
+                mVideoView.start();
+                mCurPos = position;
+                mPlayingAwemeId = video.awemeId == null ? "" : video.awemeId;
+                com.laorendouyin.app.util.AppLog.i("feed", "开始播放 #" + position
+                        + (video.isLandscape() ? " [横屏" : " [竖屏")
+                        + video.videoWidth + "x" + video.videoHeight + "]");
+                return;
+            }
+        }
+        // 页面视图还没实例化/刚被重建 → 延时重试
+        if (attempt < 6) {
+            com.laorendouyin.app.util.AppLog.i("feed", "页视图未就绪，重试挂载 #" + position + " (第" + attempt + "次)");
+            mViewPager.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    startPlay(position, attempt + 1);
+                }
+            }, 250);
+        } else {
+            com.laorendouyin.app.util.AppLog.i("feed", "挂载失败，放弃 #" + position);
+        }
+    }
+
+    /**
+     * 要挂的这条，是不是播放器当前正在放的那条？
+     * 用 id 比对（换流时同一个视频可能已被重新解析成新对象，不能用引用比）。
+     */
+    private boolean isSameAsPlaying(FeedVideo video) {
+        if (video == null || mPlayingAwemeId.isEmpty()) return false;
+        if (video.awemeId == null || !mPlayingAwemeId.equals(video.awemeId)) return false;
+        if (mVideoView == null) return false;
+        // 播放器得真的还"有内容"，不能是刚被 release 过的空壳
+        int st = mVideoView.getCurrentPlayState();
+        return st == VideoView.STATE_PREPARING
+                || st == VideoView.STATE_PREPARED
+                || st == VideoView.STATE_PLAYING
+                || st == VideoView.STATE_PAUSED
+                || st == VideoView.STATE_BUFFERING
+                || st == VideoView.STATE_BUFFERED;
+    }
+
+    /** 真冷启动：空列表 + 提示 */
+    private void loadEmpty() {
+        applyNewItems(new java.util.ArrayList<FeedVideo>(), false);
+        showHint("正在连接网络，首次加载需要几秒…");
+    }
+
+    /**
+     * 列表变更单一入口：过滤（方向不对 / 看过 / 重复）→ 入列 → 记账 → 缓存同步 → 通知。
+     * ⚠️ 所有对 mVideoList 的批量改动必须走这里（真机教训：散落多处的列表改动
+     * 难审计，4 次 IndexOutOfBounds 闪退即源于变更与回收的竞态）。
+     *
+     * @return 实际新增条数
+     */
+    private int applyNewItems(java.util.List<FeedVideo> incoming, boolean replace) {
+        // 转屏保活：整批换血时，正在播的那条要放回列表首位（否则播放器被迫重载）
+        final FeedVideo keep = replace ? mKeepVideo : null;
+        final String keepId = keep == null ? null : keep.awemeId;
+
+        // 先算后换（原子语义）：accepted 全部算妥才动列表——杜绝"清空后全被过滤=空屏"
+        java.util.List<FeedVideo> accepted = new java.util.ArrayList<>();
+        java.util.List<String> acceptedIds = new java.util.ArrayList<>();
+        int droppedByOrientation = 0;
+        for (FeedVideo v : incoming) {
+            if (keepId != null && keepId.equals(v.awemeId)) continue;   // 已手动保留在首位，别重复
+            // 方向过滤：竖屏模式只留竖屏视频，横屏模式只留横屏视频
+            if (!v.matchesOrientation(mWantLandscape)) {
+                droppedByOrientation++;
+                continue;
+            }
+            if (SeenStore.isSeen(this, v.awemeId)) continue;
+            boolean dup = false;
+            // replace=整批换血，无需比对旧列表；append=连旧列表一起去重
+            if (!replace) {
+                for (FeedVideo old : mVideoList) {
+                    if (old.awemeId != null && old.awemeId.equals(v.awemeId)) { dup = true; break; }
+                }
+            }
+            if (!dup) {
+                for (FeedVideo a : accepted) {
+                    if (a.awemeId != null && a.awemeId.equals(v.awemeId)) { dup = true; break; }
+                }
+            }
+            if (!dup) {
+                accepted.add(v);
+                acceptedIds.add(v.awemeId);
+            }
+        }
+        if (droppedByOrientation > 0) {
+            com.laorendouyin.app.util.AppLog.i("feed", "方向过滤：丢掉 " + droppedByOrientation + " 条"
+                    + (mWantLandscape ? "非横屏" : "非竖屏") + "视频");
+        }
+        if (replace && accepted.isEmpty() && keep == null) {
+            // 整批都不合适且没有要保活的视频 → 保持现状不空屏，交由调用方补拉
+            com.laorendouyin.app.util.AppLog.i("feed", "整批都不合适，保持现状待补拉");
+            return 0;
+        }
+        if (replace) {
+            mVideoList.clear();
+            if (keep != null) {
+                mVideoList.add(keep);
+                // 用掉即弃：用户滑走后它不该还赖在首位
+                mKeepVideo = null;
+                com.laorendouyin.app.util.AppLog.i("feed", "换流保留在播视频 " + keep.awemeId);
+            }
+        }
+        mVideoList.addAll(accepted);
+        SeenStore.markSeen(this, acceptedIds);
+        // 应用级缓存：重进页面直接接着放（只缓存当前方向的内容）
+        if (!mVideoList.isEmpty()) {
+            sCache.clear();
+            sCache.addAll(mVideoList);
+        }
+        mAdapter.notifyDataSetChanged();
+        return accepted.size();
+    }
+
+    /** 进页面垫场：有缓存=放上次刷到的视频（不闪老面孔）；真冷启动才走空列表 */
+    private void loadCacheOrEmpty() {
+        if (!sCache.isEmpty()) {
+            // ⚠️ 缓存里的条目必须是**当前方向**的：横竖屏切换时会清缓存，
+            //    但"从后台回来/重进页面"走的是缓存，方向没变，可以直接用。
+            boolean allMatch = true;
+            for (FeedVideo v : sCache) {
+                if (!v.matchesOrientation(mWantLandscape)) { allMatch = false; break; }
+            }
+            if (!allMatch) {
+                com.laorendouyin.app.util.AppLog.i("feed", "缓存方向与当前屏幕不符 → 丢弃缓存");
+                sCache.clear();
+                loadEmpty();
+                return;
+            }
+            mVideoList.clear();
+            mVideoList.addAll(sCache);
+            mAdapter.notifyDataSetChanged();
+            com.laorendouyin.app.util.AppLog.i("feed", "载入缓存 " + mVideoList.size() + " 条");
+            return;
+        }
+        loadEmpty();
+    }
+
+    private static String readAll(InputStream is) throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = is.read(buf)) > 0) bos.write(buf, 0, n);
+        is.close();
+        return new String(bos.toByteArray(), StandardCharsets.UTF_8);
+    }
+
+    // ---------- 沉浸式全屏 ----------
+
+    /**
+     * 隐藏状态栏与导航栏，并用 **IMMERSIVE_STICKY** 降低系统手势误触。
+     *
+     * 为什么必须做：**横屏时"从下往上滑"正好是系统的「回到主屏」手势** ——
+     * 用户想切下一条视频，系统却把他送回桌面，主观感受就是"划不动"（本机实测复现过：
+     * 一次上滑直接让 App 进了后台，日志里是 PAUSED→PLAYING）。
+     * 沉浸模式下，边缘/底部滑动**第一次只会唤出系统栏**，手势不生效 ——
+     * 要再滑一次才会触发系统操作，这就把误触挡掉了。
+     *
+     * 顺带的好处：刷视频本来就该满屏，状态栏和导航栏纯属干扰。
+     */
+    private void hideSystemBars() {
+        android.view.View decor = getWindow().getDecorView();
+        decor.setSystemUiVisibility(
+                android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN);
+    }
+
+    /** 每次拿回焦点都重挂一次：沉浸态会被系统的弹窗/切后台清掉，需要自动恢复 */
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) hideSystemBars();
+    }
+
+    /** 刷视频要常亮：不然看着看着黑屏 */
+    @Override
+    protected boolean keepScreenOnWhileVisible() {
+        return true;
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (mVideoView != null) mVideoView.resume();
+        // 预加载跟着页面可见性走：后台时整队停，回来时把没预热好的补齐
+        if (mPreloadManager != null) mPreloadManager.resumeAll();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // ⚠️ 原来只停了播放器：预加载队列不管，用户按 Home 走后还在继续下（每条最多 1MB）
+        if (mPreloadManager != null) mPreloadManager.pauseAll();
+        if (mVideoView != null) mVideoView.pause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (mVideoView != null) mVideoView.release();
+        if (mPreloadManager != null) mPreloadManager.removeAllPreloadTask();
+    }
+}

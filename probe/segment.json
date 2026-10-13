@@ -1,0 +1,151 @@
+{
+  "probes": [
+    {
+      "label": "channel/setting",
+      "pathname": "/aweme/v1/web/home/channel/setting/",
+      "extra": [],
+      "status": 200,
+      "bytes": 921,
+      "status_code": 0,
+      "top_keys": [
+        "config_info",
+        "status_code"
+      ],
+      "body_sample": "{\"config_info\":[{\"key\":\"0\",\"label\":\"全部\",\"is_active_tab\":false},{\"key\":\"100000\",\"label\":\"公开课\",\"is_active_tab\":false},{\"key\":\"300205\",\"label\":\"游戏\",\"is_active_tab\":false},{\"key\":\"300206\",\"label\":\"二次元\",\"is_active_tab\":false},{\"key\":\"300209\",\"label\":\"音乐\",\"is_active_tab\":false},{\"key\":\"300215\",\"label\":\"影视\",\"is_active_tab\":false},{\"key\":\"300204\",\"label\":\"美食\",\"is_active_tab\":false},{\"key\":\"300213\",\"label\":\"知识\",\"is_active_tab\":false},{\"key\":\"300214\",\"label\":\"小剧场\",\"is_active_tab\":false},{\"key\":\"300216\",\"label\":\"生活vlog\",\"is_active_tab\":false},{\"key\":\"300207\",\"label\":\"体育\",\"is_active_tab\":false},{\"key\":\"300221\",\"label\":\"旅行\",\"is_active_tab\":false},{\"key\":\"300217\",\"label\":\"亲子\",\"is_active_tab\":false},{\"key\":\"300220\",\"label\":\"动物\",\"is_active_tab\":false},{\"key\":\"300219\",\"label\":\"三农\",\"is_active_tab\":false},{\"key\":\"300218\",\"label\":\"汽车\",\"is_active_tab\":false},{\"key\":\"300222\",\"label\":\"美妆穿搭\",\"is_active_tab\":false}],\"status_code\":0}"
+    },
+    {
+      "label": "nearby/feed",
+      "pathname": "/aweme/v1/web/nearby/feed/",
+      "extra": [
+        [
+          "count",
+          "10"
+        ],
+        [
+          "refresh_index",
+          "1"
+        ]
+      ],
+      "status": 404,
+      "bytes": 23,
+      "head": "Unsupported path(Janus)"
+    },
+    {
+      "label": "nearby/poi",
+      "pathname": "/aweme/v1/web/poi/nearby/",
+      "extra": [
+        [
+          "count",
+          "10"
+        ],
+        [
+          "cursor",
+          "0"
+        ]
+      ],
+      "status": 404,
+      "bytes": 23,
+      "head": "Unsupported path(Janus)"
+    },
+    {
+      "label": "location/feed",
+      "pathname": "/aweme/v1/web/location/feed/",
+      "extra": [
+        [
+          "count",
+          "10"
+        ],
+        [
+          "refresh_index",
+          "1"
+        ]
+      ],
+      "status": 404,
+      "bytes": 23,
+      "head": "Unsupported path(Janus)"
+    },
+    {
+      "label": "tab/feed+tag",
+      "pathname": "/aweme/v1/web/tab/feed/",
+      "extra": [
+        [
+          "count",
+          "10"
+        ],
+        [
+          "refresh_index",
+          "1"
+        ],
+        [
+          "tag_id",
+          "300203"
+        ]
+      ],
+      "status": 200,
+      "bytes": 254068,
+      "status_code": 0,
+      "top_keys": [
+        "aweme_list",
+        "has_more",
+        "log_pb",
+        "status_code"
+      ],
+      "aweme_count": 2,
+      "ids": [
+        "7679327437762727219",
+        "7665569366657764654"
+      ],
+      "body_sample": "{\"aweme_list\":[{\"ad_candidates\":null,\"ai_follow_images\":null,\"authentication_token\":\"MS4wLjAAAAAAjttp4q_RbUSo_8Mthzg7BqngI0wdIQupCfpF12pfYKEHFn-lOiS6aD4qMZGRsx8shzfwS9_IzgrdLEmOfMhBuivaORoJNYujaBuSVJRSYiFQnAzeDfUrhBOPKGSHA0CI1PqobG8lwAEYLxpn5RdrraLyIZPjnmUQOistyc48Vlat4R2jmJ-iWQCL8xUCT5l9OmQf73AI_e7YCHWqKYNvN36y-XfGyzNeJ1ja6051KHulTrzr-Dmd_JNu3IC2ABIN\",\"author\":{\"avatar_thumb\":{\"height\":720,\"uri\":\"100x100/aweme-avatar/tos-cn-i-c9aec8xkvj_311678ca0fca46998fe7dcb713c8bcec\",\"url_list\":[\"https://p3-pc.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-i-c9aec8xkvj_311678ca0fca46998fe7dcb713c8bcec.jpeg?from=327834062\\u0026se=false\\u0026biz_tag=feed_avatar\\u0026l=202610131753465360F391355F6BFE6F18\"],\"width\":720},\"common_interest\":null,\"cover_url\":[{\"height\":720,\"uri\":\"c8510002be9a3a61aad2\",\"url_list\":[\"https://p3-pc-sign.douyinpic.com/obj/c8510002be9a3a61aad2?lk3s=138a59ce\\u0026x-expires=1793091600\\u0026x-signature=2Lmo0v6Vxyk0D8t4PyXBtxsbmbg%3D\\u0026from=327834062\",\"https://p9-pc-sign.douyinpic.com/obj/c8510002be9a3a61aad2?lk3s=138a59ce\\u0026x-expires=1793091600\\u0026x-signature=4h6td7S1xNFmDeny4FUEc3x86mI%3D\\u0026from=327834062\"],\"width\":720}],\"custom_verify\":\"\",\"enterprise_verify_reason\":\"\",\"follow_status\":0,\"follower_status\":0,\"is_ad_fake\":false,\"nickname\":\"晚安食光机\",\"not_seen_item_id_list\":null,\"prevent_download\":false,\"private_relation_list\":null,\"room_id\":0,\"sec_uid\":\"MS4wLjABAAAA2G3CpyzSOWOi3ix25OVQapF9H05f3hr5ZAlhqvmookzUumXkeiot3wls1xv0M4HY\",\"share_info\":{\"share_desc\":\"\",\"share"
+    },
+    {
+      "label": "tab/feed+city",
+      "pathname": "/aweme/v1/web/tab/feed/",
+      "extra": [
+        [
+          "count",
+          "10"
+        ],
+        [
+          "refresh_index",
+          "1"
+        ],
+        [
+          "tag_id",
+          ""
+        ]
+      ],
+      "status": 200,
+      "bytes": 229693,
+      "status_code": 0,
+      "top_keys": [
+        "aweme_list",
+        "has_more",
+        "log_pb",
+        "status_code"
+      ],
+      "aweme_count": 2,
+      "ids": [
+        "7686637897893574131",
+        "7677165526757494051"
+      ],
+      "body_sample": "{\"aweme_list\":[{\"ad_candidates\":null,\"ai_follow_images\":null,\"authentication_token\":\"MS4wLjAAAAAAUWDpSeCUI9AA0pXg6IB554mwDf6qzf2yccXDBKnap4_AhP0mEiA9tOdUuv-I4TmwZZV5DSfcnhR9tZuTNChAr0AVBbhL0aYX-dXoD6XfENwnmxWhnr7aa_EJHpiFbk_wusXC8Z30fFoPulEh7UzCRvtS_2y0ljikV_tZcZiYtF9qQqCEs-UZgmRb991xIP5OddczkP3wQ64TyiosLx19c3pg5Ja4vsWkc3DsSF2NEePtQbK6bl87CDKcTYNmvrTq\",\"author\":{\"avatar_thumb\":{\"height\":720,\"uri\":\"100x100/aweme-avatar/tos-cn-avt-0015_15afb1079af6d569dbbbb7ff2f85258a\",\"url_list\":[\"https://p3-pc.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-avt-0015_15afb1079af6d569dbbbb7ff2f85258a.jpeg?from=327834062\\u0026se=false\\u0026biz_tag=feed_avatar\\u0026l=20261013175347CD22329A7699C2FDA34F\"],\"width\":720},\"common_interest\":null,\"cover_url\":[{\"height\":720,\"uri\":\"c8510002be9a3a61aad2\",\"url_list\":[\"https://p3-pc-sign.douyinpic.com/obj/c8510002be9a3a61aad2?lk3s=138a59ce\\u0026x-expires=1793091600\\u0026x-signature=2Lmo0v6Vxyk0D8t4PyXBtxsbmbg%3D\\u0026from=327834062\",\"https://p9-pc-sign.douyinpic.com/obj/c8510002be9a3a61aad2?lk3s=138a59ce\\u0026x-expires=1793091600\\u0026x-signature=4h6td7S1xNFmDeny4FUEc3x86mI%3D\\u0026from=327834062\"],\"width\":720}],\"custom_verify\":\"\",\"enterprise_verify_reason\":\"\",\"follow_status\":0,\"follower_status\":0,\"is_ad_fake\":false,\"nickname\":\"喂一口🐟\",\"not_seen_item_id_list\":null,\"prevent_download\":false,\"private_relation_list\":null,\"room_id\":0,\"sec_uid\":\"MS4wLjABAAAAIYoZreKMqoaT-VQ0NyhXpMirzljmJchRCZdAPLinY-qcXdDt0FI5hcs_kr7LTmKK\",\"share_info\":{\"share_desc\":\"\",\"share_qrcode_"
+    },
+    {
+      "label": "discover",
+      "pathname": "/aweme/v1/web/discover/search/",
+      "extra": [
+        [
+          "count",
+          "10"
+        ],
+        [
+          "cursor",
+          "0"
+        ]
+      ],
+      "status": 200,
+      "bytes": 0,
+      "head": ""
+    }
+  ]
+}

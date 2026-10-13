@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  全局色板 —— 2026-09-27 v2：对齐哔哩终端（BiliClient）各控件配色逻辑，取代单色方案。
+  纠偏记录：上一版把 accent/danger/liked/collected 全抹成灰是「过度执行」——用户要的
+  是去掉乱用的彩色、对齐 Bili 的层次，不是全站单色。
+
+  BiliClient 真实色板（扒 tools/bili-src 源码，参考基准）：
+    bgblack      #000000   页面底
+    卡片/按钮底  #cc262626  CardStyle/ButtonStyle
+    textwhite    #ebe0e2   文字
+    pink         #FBFB8787 品牌点缀（Bili 只用于 statusBar 一处）
+    次要文字     #70707070、alpha 0.7~0.85 的白
+    link         #66ccff   链接
+
+  本项目口径（用户拍板）：品牌点缀色 = Bili 粉 #FBFB8787，
+  只用于 statusBar、播放进度条、点赞/收藏激活态三处，不再铺满 icon/文字。
+
+  ⚠️ 想改某一处颜色：只改这里的值即可，禁止在布局 XML / Java 里写死色值。
+-->
+<resources>
+    <!-- 页面底：纯黑（AMOLED 省电，Bili bgblack 同款） -->
+    <color name="bg_base">#000000</color>
+    <!-- 顶栏/底栏（原 #161C22） -->
+    <color name="bg_surface">#0D0D0D</color>
+    <!-- 列表行/卡片：Bili CardStyle 同款 #cc262626 -->
+    <color name="bg_card">#CC262626</color>
+    <!-- 按钮/输入框（Bili ButtonStyle 同款底） -->
+    <color name="bg_control">#CC262626</color>
+    <!-- 次要按钮：更暗一档 -->
+    <color name="bg_control_dim">#99262626</color>
+    <color name="scrim">#B0000000</color>        <!-- 状态条 -->
+
+    <!-- 文字：Bili textwhite 同款 -->
+    <color name="text_primary">#EBE0E2</color>
+    <!-- 次要文字：alpha 0.85 的白（Bili 同口径） -->
+    <color name="text_secondary">#D9EBE0E2</color>
+    <!-- 更弱一档：alpha 0.7 的白 -->
+    <color name="text_muted">#B3EBE0E2</color>
+    <color name="text_faint">#70707070</color>
+
+    <!-- 品牌点缀色：Bili 粉（用户拍板）。
+         ⚠️ 只允许出现在三处：statusBar、播放进度条、点赞/收藏激活态。 -->
+    <color name="accent">#FBFB8787</color>
+    <!-- 点缀色的暗档：未激活态描边等需要"低调一点"的场景 -->
+    <color name="accent_dim">#66FB8787</color>
+
+    <!-- 危险动作（退出应用/退出登录）：Bili 的危险动作用色逻辑——淡红。
+         （v7 曾改成灰导致主屏「退出应用」深底灰字不可见，2026-09-27 恢复。） -->
+    <color name="danger">#FF8A8A</color>
+    <color name="ok">#FF8A8A</color>
+
+    <!-- 视频画面上的文字：白色 + 半透明黑描边，否则浅色视频上会糊成一片 -->
+    <color name="on_video_text">#FFFFFF</color>
+    <color name="on_video_shadow">#80000000</color>
+
+    <!-- 点赞/收藏激活态：品牌点缀色（用户拍板：不再用亮度表达，恢复彩色激活）。
+          liked 原值 #FF3B5C（红心）、collected 原值 #FFC107（黄星）——留档备查。 -->
+    <color name="liked">#FBFB8787</color>
+    <color name="collected">#FBFB8787</color>
+    <!-- 未激活态：白 alpha 45%（亮度差保底，icon 主色走 text_primary 层次） -->
+    <color name="state_off">#73FFFFFF</color>
+
+    <!-- 主屏一级入口图标：Bili 层次（与正文同档的亮白） -->
+    <color name="icon_on_surface">#EBE0E2</color>
+
+    <!-- 聊天气泡：我方=Bili 卡片底，对方=更暗一档（口径见方案 A.5） -->
+    <color name="bubble_out">#CC262626</color>
+    <color name="bubble_in">#99262626</color>
+
+    <!-- 加载小圆圈：中性亮灰，不抢戏 -->
+    <color name="spinner">#D9EBE0E2</color>
+
+    <!-- 自绘弹窗底（2026-09-30）：比 bg_card 更实一档——弹窗压在内容之上，
+         半透明会让底下的文字透出来干扰阅读；AMOLED 上仍接近纯黑。 -->
+    <color name="bg_dialog">#F21C1C1C</color>
+</resources>

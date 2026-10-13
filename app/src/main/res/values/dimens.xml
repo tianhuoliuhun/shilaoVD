@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  尺寸基准：186dpi（手表 320px 见方 → 可用约 275dp）。
+  所有页面都从这里取尺寸，圆屏差异靠 values-round 覆盖同名键，不在布局里写死。
+  触摸目标下限 42dp ≈ 49px@186dpi，手指粗也点得到。
+-->
+<resources>
+    <!-- 字号阶 -->
+    <dimen name="t_caption">11sp</dimen>
+    <dimen name="t_body">13sp</dimen>
+    <dimen name="t_lede">15sp</dimen>
+    <dimen name="t_title">17sp</dimen>
+    <dimen name="t_display">22sp</dimen>
+
+    <!-- 间距阶 -->
+    <dimen name="s1">2dp</dimen>
+    <dimen name="s2">4dp</dimen>
+    <dimen name="s3">8dp</dimen>
+    <dimen name="s4">12dp</dimen>
+    <dimen name="s5">16dp</dimen>
+    <dimen name="s6">20dp</dimen>
+
+    <!-- 控件高度阶 -->
+    <dimen name="ctrl_min">42dp</dimen>
+    <dimen name="ctrl_md">48dp</dimen>
+    <dimen name="ctrl_lg">54dp</dimen>
+    <dimen name="bar_h">40dp</dimen>
+
+    <!-- 圆角 -->
+    <dimen name="r_card">10dp</dimen>
+    <dimen name="r_control">14dp</dimen>
+
+    <!-- 刷视频页操作栏（186dpi 手表：头像/图标比手机小一圈，间距收紧，
+         否则竖排四项会顶出圆屏可视区） -->
+    <dimen name="feed_avatar">34dp</dimen>
+    <dimen name="feed_action_icon">24dp</dimen>
+    <dimen name="feed_action_gap">8dp</dimen>
+    <dimen name="feed_bar_margin">6dp</dimen>
+    <dimen name="feed_count_text">10sp</dimen>
+
+    <!-- 加载小圆圈（内容区正中的转圈指示器） -->
+    <dimen name="spinner_size">32dp</dimen>
+    <dimen name="spinner_thickness">3dp</dimen>
+
+    <!-- 快捷回复条：手表上它只是"省打字"的辅助，不该跟聊天内容抢高度。
+         2026-09-27 用户反馈"太占位置"：原来 4 个按钮等宽铺满（各 minHeight=42dp），
+         现在压成一条细的横向滚动胶囊条，高度只有 28dp。 -->
+    <dimen name="qr_height">28dp</dimen>
+    <dimen name="qr_text">12sp</dimen>
+
+    <!-- 输入框：原为固定 42dp（chat 里还写了 maxLines=2，第二行直接被裁掉）。
+         现在 wrap_content + 这个最小值，字号调大时输入框会跟着长。 -->
+    <dimen name="input_min_h">42dp</dimen>
+
+    <!-- 圆屏内缩不在这里：由 UiActivity 按设置里的百分比统一施加到 DecorView，
+         因为每块表的圆形裁切深度不同，固定值收不住。 -->
+</resources>

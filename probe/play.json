@@ -1,0 +1,26 @@
+{
+  "feed_status": 0,
+  "feed_count": 2,
+  "plays": [
+    {
+      "aweme_id": "7665569366657764654",
+      "how": "url_list(www)",
+      "gearCount": 23,
+      "http": 206,
+      "ctype": "video/mp4",
+      "clen": "2048",
+      "gotBytes": 2048,
+      "finalHost": "v26-web.douyinvod.com"
+    },
+    {
+      "aweme_id": "7677165526757494051",
+      "how": "url_list(www)",
+      "gearCount": 16,
+      "http": 206,
+      "ctype": "video/mp4",
+      "clen": "2048",
+      "gotBytes": 2048,
+      "finalHost": "v26-web.douyinvod.com"
+    }
+  ]
+}

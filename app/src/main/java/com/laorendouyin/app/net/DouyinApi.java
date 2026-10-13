@@ -1,0 +1,431 @@
+package com.laorendouyin.app.net;
+
+// 抖音 Web 数据层：OkHttp + Rhino 签名（Signer）+ Gson 解析。
+//
+// myDVQ 相对原基座（腕上音符）的删减：只留"信息流"这一条链路。
+//   删：喜欢列表 / 作者主页作品 / 作品详情 / 用户信息 / 评论列表 / 登录态注入（本项目全程游客）
+//
+// 关键实测结论（照抄，勿凭感觉改）：
+//   - ttwid 从 live.douyin.com **一跳**即发（www 两跳的老办法已失效）
+//   - a_bogus 必须对**最终 query 串**签名，签完再追加 &a_bogus=
+//   - 拉流/播放头：UA + Referer 即可（CDN 对无 Referer 的请求一律 403），**不需要 Cookie**
+//   - 信息流每页只回 2~10 条，靠 refresh_index 递增翻页
+
+import com.laorendouyin.app.feed.FeedVideo;
+import com.laorendouyin.app.sign.Signer;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+
+public final class DouyinApi {
+
+    public static final String UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36";
+
+    /**
+     * 信息流方向。
+     *
+     * 抖音 Web 端**没有**单独的"横屏接口/竖屏接口"，方向是由请求参数隐含决定的 ——
+     * 2026-10-13 实测（probe/probe_orientation.js + probe_portrait2.js，每个组合翻 3 页）：
+     *
+     *   基线 aid=6383 + channel_pc_web + device_platform=webapp →  横屏 13 / 竖屏 1  （竖屏仅 7%）
+     *   aid=1128 + channel_web_mobile + device_platform=android →  横屏  9 / 竖屏 27 （竖屏 75%）
+     *
+     * 即：**PC 参数拿到的是横屏信息流，移动端参数拿到的是竖屏为主的流**。
+     * 客户端再按 video.width/height 过滤一遍，两条流都能做到很纯。
+     *
+     * （改 screen_width/height 与 UA 都**不能**切换方向，实测无效，别再走弯路。）
+     */
+    public enum FeedMode {
+        /** 横屏信息流：PC / 大屏那一套参数 */
+        LANDSCAPE("6383", "channel_pc_web", "webapp"),
+        /** 竖屏信息流：移动端那一套参数 */
+        PORTRAIT("1128", "channel_web_mobile", "android");
+
+        final String aid;
+        final String channel;
+        final String devicePlatform;
+
+        FeedMode(String aid, String channel, String devicePlatform) {
+            this.aid = aid;
+            this.channel = channel;
+            this.devicePlatform = devicePlatform;
+        }
+    }
+
+    /**
+     * 拉流/播放必需的请求头。真机 34s ERROR 的根因就在这里：CDN 边缘对无 Referer 的请求一律 403。
+     * 实测头矩阵（2026-09-26）：带 Referer 即可 206 video/mp4，Cookie 反而不需要。
+     */
+    public static Map<String, String> playHeaders() {
+        Map<String, String> h = new LinkedHashMap<>();
+        h.put("User-Agent", UA);
+        h.put("Referer", "https://www.douyin.com/");
+        return h;
+    }
+
+    private final OkHttpClient client;
+    private final Signer signer;
+    private final Map<String, String> cookies = new LinkedHashMap<>();
+    /** 翻页游标（每个方向各记一份：切横竖屏不该互相干扰） */
+    private final Map<FeedMode, Integer> mRefreshIndex = new java.util.EnumMap<>(FeedMode.class);
+
+    /** 游标存取（持久化用：每次进页面从上次进度继续，否则永远第一页=同样视频） */
+    public void setRefreshIndex(FeedMode mode, int idx) {
+        mRefreshIndex.put(mode, idx);
+    }
+
+    public int getRefreshIndex(FeedMode mode) {
+        Integer v = mRefreshIndex.get(mode);
+        return v == null ? 0 : v;
+    }
+
+    public DouyinApi(Signer signer) {
+        this.signer = signer;
+        this.client = new OkHttpClient.Builder()
+                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .followRedirects(true)
+                .build();
+    }
+
+    /** 实测：live.douyin.com 一跳即发 ttwid（www 两跳老办法已失效） */
+    public synchronized void ensureTtwid() throws IOException {
+        if (cookies.containsKey("ttwid")) return;
+        Request req = new Request.Builder()
+                .url("https://live.douyin.com/646454278948")
+                .header("User-Agent", UA)
+                .build();
+        try (Response resp = client.newCall(req).execute()) {
+            absorbCookies(resp);
+        }
+        if (!cookies.containsKey("ttwid")) {
+            throw new IOException("ttwid 获取失败");
+        }
+    }
+
+    // ---- 通用 query 构建 ----
+    //
+    // ⚠️ 键值**一字未改**（照实测探针抄），顺序也不能动 —— a_bogus 是对拼好的串签名。
+
+    /** 各接口共用的设备/浏览器指纹参数 */
+    private static Map<String, String> baseDeviceParams(String versionCode, String versionName) {
+        Map<String, String> p = new LinkedHashMap<>();
+        p.put("device_platform", "webapp");
+        p.put("aid", "6383");
+        p.put("channel", "channel_pc_web");
+        p.put("update_version_code", versionCode);
+        p.put("pc_client_type", "1");
+        p.put("pc_libra_divert", "Windows");
+        p.put("support_h265", "1");
+        p.put("support_dash", "1");
+        p.put("version_code", versionCode);
+        p.put("version_name", versionName);
+        p.put("cookie_enabled", "true");
+        p.put("screen_width", "2560");
+        p.put("screen_height", "1440");
+        p.put("browser_language", "zh-CN");
+        p.put("browser_platform", "Win32");
+        p.put("browser_name", "Chrome");
+        p.put("browser_version", "135.0.0.0");
+        p.put("browser_online", "true");
+        p.put("engine_name", "Blink");
+        p.put("engine_version", "135.0.0.0");
+        p.put("os_name", "Windows");
+        p.put("os_version", "10");
+        p.put("cpu_core_num", "20");
+        p.put("device_memory", "8");
+        p.put("platform", "PC");
+        p.put("downlink", "0.55");
+        p.put("effective_type", "3g");
+        p.put("round_trip_time", "0");
+        return p;
+    }
+
+    /** 通用版本参数族 */
+    private static final String VER_COMMON_CODE = "170400", VER_COMMON_NAME = "17.4.0";
+
+    /** 拼 query 并签名（LinkedHashMap 保序：a_bogus 必须对最终串算） */
+    private String joinAndSign(Map<String, String> p) {
+        StringBuilder q = new StringBuilder();
+        for (Map.Entry<String, String> e : p.entrySet()) {
+            if (q.length() > 0) q.append('&');
+            q.append(e.getKey()).append('=').append(e.getValue());
+        }
+        return q + "&a_bogus=" + urlEncode(signer.makeABogus(q.toString()));
+    }
+
+    /**
+     * 拉信息流（**游客身份**）。每次调用按方向递增各自的 refresh_index 翻页。
+     *
+     * 实测（2026-10-13，probe/probe_douyin.js）：不登录也能拿到真实内容 ——
+     *   HTTP 200 + status_code=0，每页 2~10 条，refresh_index 递增后内容变化。
+     *
+     * @param mode 横屏流 / 竖屏流（决定 aid / channel / device_platform 那套参数）
+     */
+    public List<FeedVideo> fetchFeed(int count, FeedMode mode) throws IOException {
+        ensureTtwid();
+        int idx = getRefreshIndex(mode) + 1;
+        mRefreshIndex.put(mode, idx);
+        String query = buildFeedQuery(count, idx, mode, signer);
+        Request req = new Request.Builder()
+                .url("https://www.douyin.com/aweme/v1/web/tab/feed/?" + query)
+                .header("User-Agent", UA)
+                .header("Referer", "https://www.douyin.com/")
+                .header("Cookie", cookieHeader())
+                .build();
+        try (Response resp = client.newCall(req).execute()) {
+            if (resp.body() == null) throw new IOException("空响应");
+            String body = resp.body().string();
+            List<FeedVideo> list = parseFeed(body);
+            if (list.isEmpty()) {
+                throw new IOException("feed 为空，status=" + body.substring(0, Math.min(120, body.length())));
+            }
+            return list;
+        }
+    }
+
+    /** 构造 feed query（含 a_bogus）；纯函数。默认横屏流（兼容旧调用） */
+    public static String buildFeedQuery(int count, Signer signer) {
+        return buildFeedQuery(count, 1, FeedMode.LANDSCAPE, signer);
+    }
+
+    /** 构造 feed query（含 a_bogus、翻页游标与方向参数）；纯函数 */
+    public static String buildFeedQuery(int count, int refreshIndex, FeedMode mode, Signer signer) {
+        Map<String, String> p = baseDeviceParams(VER_COMMON_CODE, VER_COMMON_NAME);
+        // 方向三件套：LinkedHashMap 里已存在这些键，put 只改值、**不动顺序**（顺序必须保持）
+        p.put("device_platform", mode.devicePlatform);
+        p.put("aid", mode.aid);
+        p.put("channel", mode.channel);
+        p.put("round_trip_time", "500");     // feed 这个接口实测探针发的是 500，保持原值
+        p.put("count", String.valueOf(count));
+        p.put("refresh_index", String.valueOf(refreshIndex));
+        p.put("tag_id", "");
+        StringBuilder q = new StringBuilder();
+        for (Map.Entry<String, String> e : p.entrySet()) {
+            if (q.length() > 0) q.append('&');
+            q.append(e.getKey()).append('=').append(e.getValue());
+        }
+        String ab = signer.makeABogus(q.toString());
+        return q + "&a_bogus=" + urlEncode(ab);
+    }
+
+    /** 解析 feed JSON → FeedVideo 列表；纯函数 */
+    public static List<FeedVideo> parseFeed(String json) {
+        List<FeedVideo> out = new ArrayList<>();
+        JsonElement rootEl = JsonParser.parseString(json);
+        if (!rootEl.isJsonObject()) return out;
+        JsonObject root = rootEl.getAsJsonObject();
+        JsonArray arr = arrOf(root, "aweme_list");
+        if (arr == null) return out;
+        for (JsonElement el : arr) {
+            if (!el.isJsonObject()) continue;
+            FeedVideo v = itemToVideo(el.getAsJsonObject());
+            if (v != null) out.add(v);
+        }
+        return out;
+    }
+
+    /** 单条 aweme 对象 → FeedVideo；纯函数 */
+    static FeedVideo itemToVideo(JsonObject item) {
+        String awemeId = optString(item, "aweme_id");
+        String title = optString(item, "desc");
+        String author = "";
+        JsonObject authorObj = objOf(item, "author");
+        if (authorObj != null) {
+            author = optString(authorObj, "nickname");
+        }
+        String playUrl = "";
+        String coverUrl = "";
+        int videoWidth = 0, videoHeight = 0;
+        JsonObject video = objOf(item, "video");
+        if (video != null) {
+            // 宽高是"横竖屏分流"的判据，必须解析出来
+            videoWidth = optInt(video, "width");
+            videoHeight = optInt(video, "height");
+            playUrl = pickGearUrl(video, awemeId);
+            if (playUrl.isEmpty()) playUrl = firstUrl(video, "play_addr", awemeId);
+            if (playUrl.isEmpty()) playUrl = firstUrl(video, "play_addr_lowbr", awemeId);
+            // ⚠️ 封面必须走 imageUrl，**不能**走 firstUrl/urlFromAddr：
+            //    后者见到 cover.uri 非空就会拼成播放端点（拿播放端点当图床），Glide 必然失败 → 封面永远黑。
+            coverUrl = imageUrl(video, "cover");
+            if (coverUrl.isEmpty()) coverUrl = imageUrl(video, "origin_cover");
+        }
+        if (playUrl.isEmpty()) return null;
+        return new FeedVideo(title, playUrl, coverUrl, awemeId, author, videoWidth, videoHeight);
+    }
+
+    /**
+     * 取「图片类」字段的直链：cover / origin_cover 这类对象的 url_list[0]。
+     * 实测：douyinpic.com 的图带不带 Referer 都能取到，Glide 直接加载即可。
+     */
+    static String imageUrl(JsonObject holder, String key) {
+        if (holder == null) return "";
+        JsonObject addr = objOf(holder, key);
+        if (addr == null) return "";
+        JsonArray list = arrOf(addr, "url_list");
+        if (list == null || list.size() == 0) return "";
+        for (int i = 0; i < list.size(); i++) {
+            JsonElement e = list.get(i);
+            if (e == null || e.isJsonNull() || !e.isJsonPrimitive()) continue;
+            String u = e.getAsString();
+            if (u != null && u.startsWith("http")) return u;
+        }
+        return "";
+    }
+
+    /**
+     * 安全取对象：字段缺失、为 null（JsonNull）或不是对象时一律返回 null。
+     * ⚠️ 不能直接用 getAsJsonObject(key)：字段存在但值是 null 时它会抛
+     *    ClassCastException（JsonNull cannot be cast to JsonObject）。真机踩过——
+     *    推荐流里混着图文贴，它们的 video 字段就是 null。
+     */
+    private static JsonObject objOf(JsonObject o, String key) {
+        if (o == null) return null;
+        JsonElement e = o.get(key);
+        return (e != null && e.isJsonObject()) ? e.getAsJsonObject() : null;
+    }
+
+    /** 安全取数组：同上，非数组/缺失/null 一律返回 null */
+    private static JsonArray arrOf(JsonObject o, String key) {
+        if (o == null) return null;
+        JsonElement e = o.get(key);
+        return (e != null && e.isJsonArray()) ? e.getAsJsonArray() : null;
+    }
+
+    private static int optInt(JsonObject o, String key) {
+        JsonElement e = o.get(key);
+        return e == null || e.isJsonNull() ? 0 : e.getAsInt();
+    }
+
+    private static long optLong(JsonObject o, String key) {
+        JsonElement e = o.get(key);
+        return e == null || e.isJsonNull() ? 0 : e.getAsLong();
+    }
+
+    private static String firstUrl(JsonObject video, String key, String awemeId) {
+        JsonObject addr = objOf(video, key);
+        if (addr == null) return "";
+        return urlFromAddr(addr, awemeId);
+    }
+
+    /**
+     * 画质偏好：0=省流量(优先540p) 1=平衡(优先720p) 2=清晰(允许1080p)。
+     *
+     * myDVQ 取值 1（平衡）——原基座是手表（1.4 寸屏，默认 0 省流量），
+     * 本项目面向手机/平板，540p 在大屏上偏糊，720p 是流量与清晰度的平衡点。
+     */
+    public static volatile int sQuality = 1;
+
+    /** 按画质偏好给档位打分，分越高越优先；H.264 / 非 DASH 的硬门槛在 pickGearUrl 里另判 */
+    static int gearRank(String gearName) {
+        boolean p540 = gearName.contains("_540_");
+        boolean p720 = gearName.contains("_720_");
+        boolean p1080 = gearName.contains("_1080_");
+        if (sQuality >= 2) return p1080 ? 3 : p720 ? 2 : p540 ? 1 : 0;
+        if (sQuality == 1) return p720 ? 3 : p540 ? 2 : 1;
+        return p540 ? 3 : p720 ? 2 : 1;
+    }
+
+    /**
+     * 优先挑解码友好的一档：H.264（HEVC 在低端设备上常无硬解，软解更吃电）
+     * + 按 sQuality 选分辨率 + 同档取最低码率。挑不到返回空，由调用方回退默认 play_addr。
+     *
+     * ⚠️ 必须排除 DASH 档（url 形如 /aweme/v1/play/dash/）：实测 25 档里 11 档给 DASH **单轨**流
+     * （站点自己另发一条 media-audio-und-mp4a 请求配音频）。MediaPlayer 单 URL 播它＝有画面没声音。
+     */
+    static String pickGearUrl(JsonObject video, String awemeId) {
+        JsonArray gears = arrOf(video, "bit_rate");
+        if (gears == null || gears.size() == 0) return "";
+        String bestUrl = "";
+        int bestRank = 0;
+        long bestBr = 0;
+        String bestGear = "";
+        for (JsonElement el : gears) {
+            if (!el.isJsonObject()) continue;
+            JsonObject g = el.getAsJsonObject();
+            if (optInt(g, "is_h265") != 0 || optInt(g, "is_bytevc1") != 0) continue;
+            JsonObject addr = objOf(g, "play_addr");
+            if (addr == null) continue;
+            String url = urlFromAddr(addr, awemeId);
+            if (url.isEmpty() || url.contains("/play/dash/")) continue;
+            String gear = optString(g, "gear_name");
+            int rank = gearRank(gear);
+            long br = optLong(g, "bit_rate");
+            if (bestUrl.isEmpty() || rank > bestRank || (rank == bestRank && br < bestBr)) {
+                bestUrl = url;
+                bestRank = rank;
+                bestBr = br;
+                bestGear = gear;
+            }
+        }
+        if (bestUrl.isEmpty()) return "";
+        // 选档结果落日志：URL 本身看不出档位，不记就没法验证到底播的是哪一档
+        com.laorendouyin.app.util.AppLog.i("feed", "选档 " + awemeId + " → " + bestGear
+                + " " + (bestBr / 1000) + "kbps（共 " + gears.size() + " 档候选）");
+        return bestUrl;
+    }
+
+    private static String urlFromAddr(JsonObject addr, String awemeId) {
+        JsonArray list = arrOf(addr, "url_list");
+        if (list == null || list.size() == 0) return "";
+        // ⚠️ 真机取证：url_list 里直连 CDN 候选（v*-web*.douyinvod.com）一律 403（带任何请求头/Cookie 均拒），
+        // 只有 www.douyin.com 的跳转候选（302→douyinvod 206 video/mp4）可播
+        // → 必须优先选跳转式 URL，否则"只显示封面"（播放器拉流失败被静默吞掉）。
+        for (int i = 0; i < list.size(); i++) {
+            String u = list.get(i).getAsString();
+            if (u.startsWith("https://www.douyin.com/")) return u;
+        }
+        // 没给跳转候选时：自己拼官方跳转式播放地址，用 play_addr.uri（形如 v0200fg...）；
+        // 不能再回退 list.get(0)——那是必 403 的直连 CDN。
+        String uri = optString(addr, "uri");
+        if (!uri.isEmpty()) {
+            return "https://www.douyin.com/aweme/v1/play/?video_id=" + uri
+                    + "&ratio=1080p&line=0" + (awemeId == null || awemeId.isEmpty() ? "" : "&item_id=" + awemeId);
+        }
+        return "";
+    }
+
+    private static String optString(JsonObject o, String key) {
+        JsonElement e = o.get(key);
+        return e == null || e.isJsonNull() ? "" : e.getAsString();
+    }
+
+    private static String urlEncode(String s) {
+        try {
+            return URLEncoder.encode(s, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void absorbCookies(Response resp) {
+        for (String c : resp.headers("Set-Cookie")) {
+            String kv = c.split(";")[0];
+            int i = kv.indexOf('=');
+            if (i > 0) cookies.put(kv.substring(0, i).trim(), kv.substring(i + 1).trim());
+        }
+    }
+
+    /** 只发游客 Cookie（ttwid）：本项目没有任何登录态 */
+    private String cookieHeader() {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> e : cookies.entrySet()) {
+            if (sb.length() > 0) sb.append("; ");
+            sb.append(e.getKey()).append('=').append(e.getValue());
+        }
+        return sb.toString();
+    }
+}

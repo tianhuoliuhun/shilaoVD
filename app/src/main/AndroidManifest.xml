@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  myDVQ 的清单：**只有一个 Activity**。
+
+  原基座（腕上音符）派生了 9 个页面（主屏/登录/会话列表/聊天/评论/我的/作者主页/设置/关于），
+  本项目按"只保留上下滑刷视频"的目标全部移除，只留 FeedActivity，并让它直接作为启动页
+  （没有主屏 → 开机即视频，不识字的使用者不需要做任何选择）。
+
+  ⚠️ 原基座**没有显式声明 INTERNET 权限**（靠依赖库的清单合并进来的）。本项目显式声明，
+  不依赖合并运气 —— 少了它，所有网络请求都会直接抛 SecurityException。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!-- 手机/平板竖屏为主，任意屏幕尺寸都要能吃下 -->
+    <supports-screens
+        android:anyDensity="true"
+        android:smallScreens="true"
+        android:normalScreens="true"
+        android:largeScreens="true"
+        android:xlargeScreens="true" />
+
+    <!--
+        android:allowBackup="false"（沿用原基座的安全口径）：
+        应用把观看记录写在本地，开启备份会让"仅保存在本机"变成空话。
+        dataExtractionRules 再显式排除一次（API 31+ 的口径）。
+    -->
+    <application
+        android:name=".DyApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Dywatch">
+
+        <!--
+          唯一页面：全屏视频流（VerticalViewPager 上下滑 + 预加载）。
+
+          它同时承担两种身份：
+            ① 普通启动页（LAUNCHER）—— 点桌面图标进来；
+            ② **桌面启动器 / Home**（HOME + DEFAULT）—— 可被设为系统主屏，开机直达视频流。
+               这是给"不识字的使用者"准备的：不用在桌面里找图标、也不会误点别的 App。
+               ⚠️ 一旦在系统设置里把它选为"默认主屏幕应用"，按 Home 键就会回到这里（而不是系统桌面）。
+                  要改回去：设置 → 应用 → 默认应用 → 主屏幕应用 → 选回系统桌面。
+
+          方向：**跟随设备旋转，但内容跟着换流** —— 竖屏时只刷竖屏信息流、横屏时只刷横屏信息流。
+          所以这里必须是 unspecified（不能锁死某个方向）；configChanges 里带 orientation，
+          旋转不重建 Activity，由 `FeedActivity.onConfigurationChanged` 负责切换数据流。
+          播放器自身的"跟随传感器转屏"被显式关闭（setEnableOrientation(false)），
+          免得它自作主张转屏、绕过上面这套分流。
+
+          stateNotNeeded / excludeFromRecents 是 Home 应用的标准姿态：
+          前者让系统在异常重启后无需保存状态即可恢复；后者不把"主屏"塞进最近任务列表。
+        -->
+        <activity
+            android:name=".feed.FeedActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:screenOrientation="unspecified"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <!-- 桌面启动器身份：可被设为系统主屏 → 开机直达，无需在桌面找图标 -->
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

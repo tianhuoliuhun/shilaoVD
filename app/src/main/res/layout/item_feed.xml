@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  myDVQ 视频项 —— 只有「播放器容器 + 视频层」，**没有任何按钮或文字**。
+
+  对照原基座（腕上音符）的 item：它里面叠了标题、作者名与头像、点赞/评论/收藏/分享按钮、
+  各项计数、全屏键。本项目全部删除：使用者不识字，文字看了无用还挡画面；
+  按钮则意味着误触 —— 而误触会跳出内容流，这对"只会上下滑"的人来说等于迷路。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <!-- 播放器挂载点（每次换条由 FeedActivity 把唯一的 VideoView 搬进来） -->
+    <FrameLayout
+        android:id="@+id/container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 视频层：只负责封面显示/隐藏（见 TikTokView，纯代码构造，无子控件） -->
+    <com.laorendouyin.app.feed.TikTokView
+        android:id="@+id/tiktok_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</FrameLayout>

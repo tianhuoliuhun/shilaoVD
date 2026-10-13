@@ -1,0 +1,54 @@
+[
+  {
+    "label": "A: 仅头换Android UA",
+    "reqUA": "Mozilla/5.0 (Linux; Android 13; SM-S9080",
+    "override": {},
+    "total": 14,
+    "landscape": 13,
+    "portrait": 1,
+    "noDim": 0
+  },
+  {
+    "label": "B: 全换Android UA",
+    "reqUA": "Mozilla/5.0 (Linux; Android 13; SM-S9080",
+    "override": {},
+    "total": 14,
+    "landscape": 14,
+    "portrait": 0,
+    "noDim": 0
+  },
+  {
+    "label": "C: Android UA + 移动参数",
+    "reqUA": "Mozilla/5.0 (Linux; Android 13; SM-S9080",
+    "override": {
+      "screen_width": 412,
+      "screen_height": 915,
+      "os_name": "Android",
+      "os_version": "13",
+      "platform": "ANDROID",
+      "browser_platform": "Linux armv8l",
+      "pc_client_type": 0
+    },
+    "total": 14,
+    "landscape": 13,
+    "portrait": 1,
+    "noDim": 0
+  },
+  {
+    "label": "D: iPhone UA + 移动参数",
+    "reqUA": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 ",
+    "override": {
+      "screen_width": 390,
+      "screen_height": 844,
+      "os_name": "iOS",
+      "os_version": "17.5",
+      "platform": "IPHONE",
+      "browser_platform": "iPhone",
+      "pc_client_type": 0
+    },
+    "total": 14,
+    "landscape": 11,
+    "portrait": 3,
+    "noDim": 0
+  }
+]

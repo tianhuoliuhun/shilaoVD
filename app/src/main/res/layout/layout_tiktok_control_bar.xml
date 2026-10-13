@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TikTokController 的布局（方案 D 六修后 = 空壳）：
+  面板控件（暂停键/进度条）已并入 layout_tiktok_controller.xml（TikTokView 的直接子视图，
+  事件天然可达——放本层时被 TikTokView 盖住，用户实测"键点不动、条拖不动"）。
+  保留本文件是因为 BaseVideoController.getLayoutId() 机制要求子类给一个布局 id（给 0 也行，
+  但给空壳便于将来往 controller 层加真正全局性的东西）。
+-->
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:parentTag="android.widget.FrameLayout" />

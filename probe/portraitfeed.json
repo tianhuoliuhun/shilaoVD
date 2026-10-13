@@ -1,0 +1,66 @@
+[
+  {
+    "label": "v2/feed",
+    "pathname": "/aweme/v2/feed/",
+    "override": null,
+    "extra": [],
+    "total": 0,
+    "landscape": 0,
+    "portrait": 0,
+    "noDim": 0
+  },
+  {
+    "label": "tab/feed aid2329",
+    "pathname": "/aweme/v1/web/tab/feed/",
+    "override": {
+      "aid": 2329
+    },
+    "extra": [],
+    "total": 12,
+    "landscape": 6,
+    "portrait": 6,
+    "noDim": 0
+  },
+  {
+    "label": "tab/feed aid1128",
+    "pathname": "/aweme/v1/web/tab/feed/",
+    "override": {
+      "aid": 1128
+    },
+    "extra": [],
+    "total": 13,
+    "landscape": 3,
+    "portrait": 8,
+    "noDim": 2
+  },
+  {
+    "label": "module/feed",
+    "pathname": "/aweme/v1/web/module/feed/",
+    "override": null,
+    "extra": [
+      [
+        "module_id",
+        "1"
+      ]
+    ],
+    "total": 0,
+    "landscape": 0,
+    "portrait": 0,
+    "noDim": 0
+  },
+  {
+    "label": "tab/feed tab_id=1",
+    "pathname": "/aweme/v1/web/tab/feed/",
+    "override": null,
+    "extra": [
+      [
+        "tab_id",
+        "1"
+      ]
+    ],
+    "total": 8,
+    "landscape": 8,
+    "portrait": 0,
+    "noDim": 0
+  }
+]

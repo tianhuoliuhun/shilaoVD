@@ -1,0 +1,71 @@
+[
+  {
+    "label": "基线 aid=6383",
+    "override": {},
+    "total": 14,
+    "landscape": 13,
+    "portrait": 1,
+    "noDim": 0,
+    "portraitRatio": 7
+  },
+  {
+    "label": "aid=1128",
+    "override": {
+      "aid": 1128
+    },
+    "total": 18,
+    "landscape": 8,
+    "portrait": 10,
+    "noDim": 0,
+    "portraitRatio": 56
+  },
+  {
+    "label": "aid=1128 + device_platform=android",
+    "override": {
+      "aid": 1128,
+      "device_platform": "android"
+    },
+    "total": 31,
+    "landscape": 10,
+    "portrait": 21,
+    "noDim": 0,
+    "portraitRatio": 68
+  },
+  {
+    "label": "aid=1128 + channel=channel_web_mobile",
+    "override": {
+      "aid": 1128,
+      "channel": "channel_web_mobile"
+    },
+    "total": 18,
+    "landscape": 10,
+    "portrait": 8,
+    "noDim": 0,
+    "portraitRatio": 44
+  },
+  {
+    "label": "aid=1128 + android + mobile渠道",
+    "override": {
+      "aid": 1128,
+      "device_platform": "android",
+      "channel": "channel_web_mobile"
+    },
+    "total": 36,
+    "landscape": 9,
+    "portrait": 27,
+    "noDim": 0,
+    "portraitRatio": 75
+  },
+  {
+    "label": "aid=2329 + device_platform=android",
+    "override": {
+      "aid": 2329,
+      "device_platform": "android"
+    },
+    "total": 30,
+    "landscape": 12,
+    "portrait": 18,
+    "noDim": 0,
+    "portraitRatio": 60
+  }
+]

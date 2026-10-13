@@ -1,0 +1,128 @@
+[
+  {
+    "label": "channel/feed",
+    "pathname": "/aweme/v1/web/channel/feed/",
+    "status": 200,
+    "bytes": 1221590,
+    "status_code": 0,
+    "top_keys": [
+      "aweme_list",
+      "chime_video_list",
+      "filter_infos",
+      "log_pb",
+      "status_code",
+      "video_cover_image_list",
+      "video_cover_url_list"
+    ],
+    "count": 10,
+    "items": [
+      {
+        "id": "7679376498364583177",
+        "desc": "巧乐兹：早知道，烂在工厂了 #巧乐兹 #冰激凌 ##抖音创作者大会 #",
+        "author": "努力的大黄啊"
+      },
+      {
+        "id": "7688573472280218943",
+        "desc": "这一桌全熊宴真的是我做过难度最高的菜了#满汉全席 #房车旅居 #加拿大",
+        "author": "野生阿翔和CC"
+      },
+      {
+        "id": "7687513878061731098",
+        "desc": "牛肉界的劳斯莱斯到底能有多好吃？ #和牛 #牛肉 #高端食材 #美食 ",
+        "author": "舌尖风味记"
+      }
+    ]
+  },
+  {
+    "label": "home/channel/feed",
+    "pathname": "/aweme/v1/web/home/channel/feed/",
+    "status": 404,
+    "bytes": 23,
+    "head": "Unsupported path(Janus)"
+  },
+  {
+    "label": "tab/feed+channel_id",
+    "pathname": "/aweme/v1/web/tab/feed/",
+    "status": 200,
+    "bytes": 235526,
+    "status_code": 0,
+    "top_keys": [
+      "aweme_list",
+      "has_more",
+      "log_pb",
+      "status_code"
+    ],
+    "count": 2,
+    "items": [
+      {
+        "id": "7665569366657764654",
+        "desc": "刻赤理工学院惨案：21人死亡的校园袭击是如何发生的？ #真实案件 #俄",
+        "author": "俄罗斯调查"
+      },
+      {
+        "id": "7677165526757494051",
+        "desc": "2026 洞穴恐怖片，比鲨鱼更恐怖的，是人心的自负，恶魔之口 #重返暑",
+        "author": "木鱼讲"
+      }
+    ]
+  },
+  {
+    "label": "channel/detail",
+    "pathname": "/aweme/v1/web/channel/detail/",
+    "status": 404,
+    "bytes": 23,
+    "head": "Unsupported path(Janus)"
+  },
+  {
+    "label": "tab/feed(device_platform=android)",
+    "pathname": "/aweme/v1/web/tab/feed/",
+    "status": 200,
+    "bytes": 258887,
+    "status_code": 0,
+    "top_keys": [
+      "aweme_list",
+      "has_more",
+      "log_pb",
+      "status_code"
+    ],
+    "count": 2,
+    "items": [
+      {
+        "id": "7686637897893574131",
+        "desc": "🍀职高走读生｜9.17Thu.上学日记🎒#上学日记 #上学vlog",
+        "author": "喂一口🐟"
+      },
+      {
+        "id": "7671211898179718400",
+        "desc": "在东方明珠玩100人躲猫猫！奖金10万元 #影视飓风 #蜘蛛侠崭新之日",
+        "author": "飓多多StormCrew"
+      }
+    ]
+  },
+  {
+    "label": "tab/feed(精选候选)",
+    "pathname": "/aweme/v1/web/tab/feed/",
+    "status": 200,
+    "bytes": 239589,
+    "status_code": 0,
+    "top_keys": [
+      "aweme_list",
+      "has_more",
+      "log_pb",
+      "status_code"
+    ],
+    "count": 2,
+    "items": [
+      {
+        "id": "7692478010867371273",
+        "desc": "重制版 第二季3期深度解说！ 全员恶人的不良恋综！男嘉宾一出场就干架！",
+        "author": "瓶子酱🎬"
+      },
+      {
+        "id": "7686136055024231675",
+        "desc": "欢迎收看团播女主播负收入的一天vlog#团播vlog#ost东区厂牌",
+        "author": "小糊涂蝶"
+      }
+    ]
+  }
+]
