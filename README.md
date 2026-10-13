@@ -5,10 +5,13 @@
 **给不识字的老人用的极简抖音 —— 开机就是视频，只会上下滑就够了。**
 
 <p align="center">
-  <img src="docs/screenshots/landscape.png" width="640" alt="实际的界面：除了视频本身，没有任何按钮、文字或图标">
-  <br>
-  <sub>↑ 这是实际界面（横屏状态）：除了视频本身，没有任何按钮、文字或图标。<br>
-  画面里的字幕是视频内容自带的，不是界面元素。</sub>
+  <img src="docs/screenshots/overview.png" width="760" alt="界面示意：竖着拿只刷竖屏视频，横着拿只刷横屏视频，屏幕上没有按钮和文字">
+</p>
+
+实际运行时的样子（那张图里的字幕是视频内容自带的，不是界面元素）：
+
+<p align="center">
+  <img src="docs/screenshots/landscape.png" width="620" alt="实际界面：除了视频本身，没有任何按钮、文字或图标">
 </p>
 
 </div>
