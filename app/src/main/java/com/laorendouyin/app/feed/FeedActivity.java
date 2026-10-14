@@ -157,8 +157,11 @@ public class FeedActivity extends UiActivity {
         if (current != null) {
             mVideoList.add(current);   // 当前视频留在首位 → 播放器有地方可待
             mCurPos = 0;
-            mViewPager.setCurrentItem(0, false);
+            // ⚠️ 顺序要紧：**先 notifyDataSetChanged 再 setCurrentItem**。
+            //    反过来的话，ViewPager 会拿"旧数据 + 新位置"去算滚动，数据一变就对不上 ——
+            //    这是"横竖屏切换闪退"的另一半原因。
             mAdapter.notifyDataSetChanged();
+            mViewPager.setCurrentItem(0, false);
             // 重新挂载（转屏会让 item 重新布局；startPlay 会识别出"同一个视频"而只搬视图）
             startPlay(0);
             clearHint();
@@ -416,8 +419,12 @@ public class FeedActivity extends UiActivity {
         int count = mViewPager.getChildCount();
         for (int i = 0; i < count; i++) {
             View itemView = mViewPager.getChildAt(i);
-            FeedAdapter.ViewHolder viewHolder = (FeedAdapter.ViewHolder) itemView.getTag();
-            if (viewHolder != null && viewHolder.mPosition == position) {
+            Object tag = itemView.getTag();
+            // ⚠️ 空列表期间 ViewPager 里可能挂着占位 View（没有 ViewHolder 标签）——
+            //    硬转会 ClassCastException，直接跳过最稳。
+            if (!(tag instanceof FeedAdapter.ViewHolder)) continue;
+            FeedAdapter.ViewHolder viewHolder = (FeedAdapter.ViewHolder) tag;
+            if (viewHolder.mPosition == position) {
                 FeedVideo video = mVideoList.get(position);
 
                 // ③ 转屏保活：要挂的就是当前正在播的那个 → 只搬视图，播放不中断
@@ -637,12 +644,73 @@ public class FeedActivity extends UiActivity {
         return true;
     }
 
+    // ---------- 顶部信息栏（时间 / 日期 / 星期 / 节日）----------
+
+    /** 信息栏刷新用的定时器 */
+    private android.os.Handler mClockHandler;
+    private Runnable mClockTick;
+
+    /**
+     * 启动信息栏刷新。
+     *
+     * 为什么是 20 秒一轮而不是每秒：显示精度只到分钟（19:15），每秒刷是白耗电；
+     * 而 20 秒这一档又保证了**跨分钟不超过 20 秒误差、跨天不超过 20 秒** ——
+     * 老人看时间不会因为差这一秒觉得不对，但日期/星期必须当天就换过来。
+     */
+    private void startClock() {
+        if (mClockHandler == null) {
+            mClockHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        }
+        if (mClockTick == null) {
+            mClockTick = new Runnable() {
+                @Override
+                public void run() {
+                    updateClock();
+                    if (mClockHandler != null) mClockHandler.postDelayed(this, 20_000L);
+                }
+            };
+        }
+        mClockHandler.removeCallbacks(mClockTick);
+        mClockHandler.post(mClockTick);
+    }
+
+    private void stopClock() {
+        if (mClockHandler != null && mClockTick != null) {
+            mClockHandler.removeCallbacks(mClockTick);
+        }
+    }
+
+    /** 刷新四样东西；节日为空时把那一行收起来（不占位、不留空壳） */
+    private void updateClock() {
+        android.widget.TextView tvTime = findViewById(R.id.tv_clock_time);
+        if (tvTime == null) return;   // 布局里没有信息栏时静默跳过
+
+        tvTime.setText(com.laorendouyin.app.util.DateTimeInfo.time());
+        ((android.widget.TextView) findViewById(R.id.tv_clock_date))
+                .setText(com.laorendouyin.app.util.DateTimeInfo.date());
+        ((android.widget.TextView) findViewById(R.id.tv_clock_lunar))
+                .setText(com.laorendouyin.app.util.DateTimeInfo.lunar());
+        ((android.widget.TextView) findViewById(R.id.tv_clock_week))
+                .setText(com.laorendouyin.app.util.DateTimeInfo.week());
+
+        android.widget.TextView tvFestival = findViewById(R.id.tv_clock_festival);
+        String festival = com.laorendouyin.app.util.DateTimeInfo.festival();
+        if (festival.isEmpty()) {
+            tvFestival.setVisibility(View.GONE);
+        } else {
+            tvFestival.setText(festival);
+            tvFestival.setVisibility(View.VISIBLE);
+        }
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         if (mVideoView != null) mVideoView.resume();
         // 预加载跟着页面可见性走：后台时整队停，回来时把没预热好的补齐
         if (mPreloadManager != null) mPreloadManager.resumeAll();
+        // 回到前台立刻对一次表（后台期间可能已经跨分钟/跨天了）
+        startClock();
     }
 
     @Override
@@ -651,6 +719,8 @@ public class FeedActivity extends UiActivity {
         // ⚠️ 原来只停了播放器：预加载队列不管，用户按 Home 走后还在继续下（每条最多 1MB）
         if (mPreloadManager != null) mPreloadManager.pauseAll();
         if (mVideoView != null) mVideoView.pause();
+        // 后台没必要再刷时间
+        stopClock();
     }
 
     @Override

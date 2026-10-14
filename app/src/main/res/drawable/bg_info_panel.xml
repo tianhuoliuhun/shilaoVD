@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  顶部信息栏的底色：半透明深色 + 圆角。
+
+  为什么必须给底：视频画面什么颜色都有（雪地是白的、夜景是黑的），
+  纯白字压在亮画面上直接看不见。垫一层半透明深色，白字在什么画面上都读得清。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#73101418" />
+    <corners android:radius="14dp" />
+</shape>

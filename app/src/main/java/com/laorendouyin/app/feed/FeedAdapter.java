@@ -45,6 +45,8 @@ public class FeedAdapter extends PagerAdapter {
      */
     @Override
     public int getItemPosition(@NonNull Object object) {
+        // 空列表期间可能塞进来的是占位 View（没有 ViewHolder 标签）→ 一律当"需要重建"
+        if (!(object instanceof View)) return POSITION_NONE;
         View view = (View) object;
         Object tag = view.getTag();
         if (!(tag instanceof ViewHolder)) return POSITION_NONE;
@@ -62,8 +64,21 @@ public class FeedAdapter extends PagerAdapter {
     @Override
     public Object instantiateItem(@NonNull ViewGroup container, int position) {
         Context context = container.getContext();
+
+        // ⚠️ 横竖屏切换会先清空列表、再异步拉新方向的内容，中间存在
+        //    "列表已空、但 ViewPager 仍在 populate" 的窗口 —— 此时下面那句 mVideos.get(pos)
+        //    必定 IndexOutOfBounds 闪退（用户报的"横竖屏切换闪退"就是这个）。
+        //    这里给个空占位顶着；等新数据到货 notifyDataSetChanged 后 ViewPager 会自然重建它。
+        if (mVideos == null || mVideos.isEmpty()) {
+            View placeholder = new View(context);
+            placeholder.setLayoutParams(new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            container.addView(placeholder);
+            return placeholder;
+        }
+
         // 边界护栏：数据变更与 populate 竞态时 position 可能瞬时越界
-        final int pos = Math.min(position, Math.max(0, mVideos.size() - 1));
+        final int pos = Math.min(position, mVideos.size() - 1);
         View view = null;
         if (mViewPool.size() > 0) {
             view = mViewPool.get(0);

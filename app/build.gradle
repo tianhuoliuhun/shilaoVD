@@ -23,8 +23,8 @@ android {
         applicationId 'com.laorendouyin.app'
         minSdk 21
         targetSdk 36
-        versionCode 2
-        versionName '1.1'
+        versionCode 3
+        versionName '1.2'
     }
 
     signingConfigs {
@@ -81,6 +81,10 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     // JSON 解析（纯 Java 可单测）
     implementation 'com.google.code.gson:gson:2.11.0'
+
+    // 农历与节日：顶部信息栏要显示"今日节日"，春节/中秋这些必须查农历
+    // （纯 Java 实现，无 native、无 java.time 依赖，minSdk 21 可用）
+    implementation 'cn.6tail:lunar:1.7.4'
 
     testImplementation 'junit:junit:4.13.2'
 }
