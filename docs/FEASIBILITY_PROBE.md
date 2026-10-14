@@ -2,7 +2,7 @@
 
 > 目的：在动手裁剪代码之前，先证明「不登录也能拿到推荐流」这条路线走得通，并确定「第二个分区」到底能不能做。
 > 方法：Node 22 + **基座内嵌的 `ylcangel/douyin_sign` 签名 JS**（`utils.js` / `sm3.js` / `vm_decode.js`）生成 `a_bogus`；从 `live.douyin.com` 取游客 `ttwid`；请求头 `UA(Chrome135/Win) + Referer`。
-> 脚本：`probe/*.js`　原始结果：`probe/*.json`　日期：2026-10-13
+> 脚本：`probe/*.js`　原始结果：`probe/*.json`　日期：2026-10-13（2026-10-14 补充第四节「档位机制」）
 
 ---
 
@@ -15,6 +15,7 @@
 | **频道流** | `GET /aweme/v1/web/channel/feed/?tag_id=<频道id>` | ✅ **200 + 10 条，内容与频道确实匹配** |
 | **频道表** | `GET /aweme/v1/web/home/channel/setting/` | ✅ 返回 17 个频道定义 |
 | **播放地址** | `play_addr.url_list` 中的 `www.douyin.com` 跳转候选 | ✅ **HTTP 206 `video/mp4`**（带 UA + Referer + Range） |
+| **档位（清晰度）控制** | 自拼 `play/` + `video_id` + `ratio=540p/720p/1080p` | ✅ **`ratio` 精确决定服务端给哪一档**（见第四节） |
 | 同城 / 附近 | `nearby/feed`、`poi/nearby`、`location/feed` | ❌ **全部 404**（`Unsupported path(Janus)`） |
 | `tag_id` 用在推荐接口 | `tab/feed?tag_id=300204` | ❌ **不生效**（返回内容与标签无关，都是泛推荐池） |
 | `module/feed` | `/aweme/v1/web/module/feed/` | ❌ `status_code=4`（参数不对） |
@@ -83,7 +84,49 @@
 
 ---
 
-## 四、待你决定
+## 四、播放地址的档位机制（2026-10-14 补测）
+
+`video.bit_rate[]` 是档位表（实测一条视频有 **23~25 档**），每档长这样：
+
+| 字段 | 含义 |
+|---|---|
+| `gear_name` | 档位名，如 `normal_1080_0` / `normal_720_0` / `low_540_0` / `lower_540_0` |
+| `bit_rate` | 码率（bps） |
+| `is_h265` / `is_bytevc1` | 是否 HEVC / ByteVC1 —— **要跳过**（老设备没有软硬解支持） |
+| `format` | `mp4`（单文件、含音视频）或 `dash`（**单轨**，单 URL 播出来只有画面没声音） |
+| `play_addr.uri` | **所有档共用同一个 video_id**（不是每档一个） |
+| `play_addr.url_list[]` | ① CDN 直连（带签名的 `/video/tos/...`，**实测一律 403**）；② `www.douyin.com/aweme/v1/play/?…&file_id=…&sign=…`（**档位签名候选**） |
+
+### 两条播放路径
+
+1. **档位签名候选**：URL 自带 `file_id` + `sign` + `biz_sign`，**服务端按签名给档，最准**。
+2. **自拼兜底**：当某档的 `url_list` 里**没有** www 候选时（只剩必 403 的 CDN 直连），
+   自己拼：
+
+   ```
+   https://www.douyin.com/aweme/v1/play/?video_id=<play_addr.uri>&ratio=540p|720p|1080p&line=0
+   ```
+
+   这个端点**只认 `ratio` 参数**。
+
+### 实测：同一 video_id，只换 ratio
+
+服务端返回**三条完全不同的 CDN 资源**，与档位表精确对应：
+
+| 请求的 ratio | 返回资源（总大小） | 对应档位 |
+|---|---|---|
+| `540p` | `o0E99wIH5ij…`（208,642,361 B） | `normal_540_0` |
+| `720p` | `5fb2b4690e84…`（202,534,344 B） | `normal_720_0` |
+| `1080p` | `okXSIABqAgsE…`（274,401,973 B） | `normal_1080_0` |
+
+> **这条实测的用处**：抖音给的 1080p 是 **H.264 High Profile @ Level 5.0**（`avc1.640032`），
+> 老设备的解码器普遍报 `NoSupport` —— 必须在 **URL 这一层**就把档位压到 540p
+> （即 High@L3.1），而不是指望播放器"自己挑一档能解的"。
+> 复现脚本：`probe/probe_gear.js`
+
+---
+
+## 五、待你决定
 
 原来的「推荐 + 移动（同城）」在 web 路线下只能改成：
 
@@ -105,3 +148,4 @@
 | `probe_tagid.js` | 验证 `tag_id` 在推荐接口上是否生效 |
 | `probe_channel.js` | 频道内容接口 + 移动端参数 + 精选候选 |
 | `probe_play.js` | 播放地址可用性（HTTP 206 实测） |
+| `probe_gear.js` | **档位结构** + `ratio` 与清晰度的对应关系（见第四节） |
