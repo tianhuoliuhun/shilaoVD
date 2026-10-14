@@ -297,12 +297,20 @@ public class IjkPlayer extends AbstractPlayer {
     @Override
     public void setOptions() {
         try {
-            // —— 硬解优先：老设备 CPU 弱，纯软解 720p 会卡成幻灯片 ——
-            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1);
-            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-auto-rotate", 1);
-            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", 1);
-            // 硬解失败时自动退回软解（而不是直接报错）—— 老设备的硬解支持参差不齐
-            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-all-videos", 1);
+            // ---- 解码方式按系统版本分开（实测踩出来的）----
+            //
+            // API < 21（Android 4.x）**强制软解**：实测 4.4 模拟器上系统只有
+            //   OMX.google.h264.decoder 这一个**纯软解**的 MediaCodec，走硬解路径直接
+            //   ERROR_CODE_DECODING_FAILED；而老真机的硬解也普遍残缺。
+            //   FFmpeg 软解虽然吃 CPU，但至少能出画面 —— 对老设备来说"能看"比"省电"重要。
+            // API 21+ 则硬解优先（更流畅也更省电）。
+            int useMediaCodec = (android.os.Build.VERSION.SDK_INT >= 21) ? 1 : 0;
+            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", useMediaCodec);
+            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-auto-rotate", useMediaCodec);
+            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", useMediaCodec);
+            // ⚠️ 这一条**绝不能设成 1**：它表示"所有视频都走硬解"，等于把回退软解的路堵死，
+            //    在老设备上直接判死刑（之前我就是这么写的，4.4 上三个内核全灭）。
+            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-all-videos", 0);
 
             // —— 起播与流畅度 ——
             // 不等缓冲攒满就开播（抖音这种短视频，等满反而更慢）

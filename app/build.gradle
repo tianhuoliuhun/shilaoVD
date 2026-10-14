@@ -26,8 +26,8 @@ android {
         // minSdk 14 必需：Android 5.0（API 20）及以下没有系统级 multidex，
         // 方法数超过 64K 就必须显式开启（配合 DyApp 里的 MultiDex.install）
         multiDexEnabled true
-        versionCode 7
-        versionName '1.6'
+        versionCode 8
+        versionName '1.7'
     }
 
     signingConfigs {
@@ -81,7 +81,7 @@ dependencies {
     implementation 'com.github.bumptech.glide:glide:4.16.0'
 
     // a_bogus 签名：App 内嵌 Rhino 跑 ylcangel/douyin_sign 的 JS（Apache-2.0）
-    implementation 'org.mozilla:rhino:1.7.15'
+    implementation 'org.mozilla:rhino:1.7.7.2'
     // HTTP 客户端（Feed 数据层）
     implementation 'com.squareup.okhttp3:okhttp:3.12.13'
     // JSON 解析（纯 Java 可单测）
@@ -97,6 +97,19 @@ dependencies {
     implementation 'tv.danmaku.ijk.media:ijkplayer-arm64:0.8.8'
     implementation 'tv.danmaku.ijk.media:ijkplayer-x86:0.8.8'
     implementation 'tv.danmaku.ijk.media:ijkplayer-x86_64:0.8.8'
+
+    // Conscrypt：给老系统换一套现代 TLS 实现（自带 BoringSSL）
+    // 为什么必须加：Android 4.4 自带的 OpenSSL 1.0.1 太老，握手时服务器直接回
+    //   "tlsv1 alert protocol version"（抖音这类现代服务早已不收老协议），
+    //   应用层光设 enabledProtocols 改不了底层 —— 只能把整个 TLS provider 换掉。
+    implementation 'org.conscrypt:conscrypt-android:2.5.2'
+
+    // ExoPlayer 2.18：**老系统上真正能播的那个内核**
+    // 为什么它行、IJK 不行：ExoPlayer 的网络层走 Java 的 HttpURLConnection，
+    // 能吃到我们为老系统装的 Conscrypt（现代 TLS）；而 IJK/系统 MediaPlayer 走 native，
+    // 各自用各自的老 TLS 栈，Conscrypt 管不着 —— 实测它们握手都被服务器拒。
+    // ⚠️ 必须锁 2.18 这条线：ExoPlayer 2.19 起 minSdk 提到 21，我们这个项目是 14。
+    implementation 'com.google.android.exoplayer:exoplayer-core:2.18.7'
 
     // 农历与节日：顶部信息栏要显示"今日节日"，春节/中秋这些必须查农历
     // （纯 Java 实现，无 native、无 java.time 依赖，minSdk 14 可用）

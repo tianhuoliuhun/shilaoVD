@@ -13,15 +13,15 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-      IJK（ijkplayer）的 aar 在打包时被统一声明成了 minSdk 21，但它们里面装的是 **native so**：
-      64 位的 so 本来也只会在 API 21+ 的设备上被加载，Android 4 用的是 armeabi-v7a 那一条，
-      并不受这个声明约束。用 overrideLibrary 放行合并检查（不然整个工程只能停在 21）。
-
-      ⚠️ 真正决定"某台机器能不能用 IJK"的是 so 能不能加载成功 —— 这件事在
-         IjkPlayer.isAvailable() 里用 try-catch 探着，失败会自动退到系统 MediaPlayer 内核，
-         不会闪退（架构不匹配抛的是 UnsatisfiedLinkError，属 Error 不属 Exception，漏了就崩）。
+      IJK、ExoPlayer 的 aar 都声明了更高的 minSdk（21 / 16），但这几条对我们都能兜住：
+        · IJK 装的是 native so —— 64 位那条本来也只可能在 API 21+ 被加载，
+          Android 4 走的是 armeabi-v7a，不受那个声明约束；
+        · ExoPlayer 声明 16 是因为用了 API 16 的个别东西，而 14/15 上万一真出问题，
+          FallbackPlayerFactory 会自动退到 IJK / 系统 MediaPlayer，不会闪退或黑屏卡死。
+      ExoPlayer 拆成了 6 个子模块，每个都有自己的 manifest 包名，必须逐个列出（少一个就编译不过）：
+      core / common / datasource(upstream) / extractor / decoder / database。
     -->
-    <uses-sdk tools:overrideLibrary="tv.danmaku.ijk.media.player_armv7a,tv.danmaku.ijk.media.player_arm64,tv.danmaku.ijk.media.player_x86,tv.danmaku.ijk.media.player_x86_64,tv.danmaku.ijk.media.player" />
+    <uses-sdk tools:overrideLibrary="tv.danmaku.ijk.media.player_armv7a,tv.danmaku.ijk.media.player_arm64,tv.danmaku.ijk.media.player_x86,tv.danmaku.ijk.media.player_x86_64,tv.danmaku.ijk.media.player,com.google.android.exoplayer2.core,com.google.android.exoplayer2.common,com.google.android.exoplayer2.upstream,com.google.android.exoplayer2.extractor,com.google.android.exoplayer2.decoder,com.google.android.exoplayer2.database" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

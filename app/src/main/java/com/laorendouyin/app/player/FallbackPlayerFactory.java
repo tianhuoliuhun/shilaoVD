@@ -9,54 +9,93 @@ import xyz.doikki.videoplayer.player.AndroidMediaPlayer;
 import xyz.doikki.videoplayer.player.PlayerFactory;
 
 /**
- * 播放内核工厂：**IJK 优先，系统 MediaPlayer 兜底**。
+ * 播放内核工厂：**ExoPlayer → IJK → 系统 MediaPlayer**，三级依次兜底。
  *
- * 这是一个两级兜底：
- *   ① IJK（FFmpeg 内核）—— 老设备/怪格式的兼容性最好，默认用它；
- *   ② 系统 MediaPlayer —— IJK 的 so 装不上（架构不匹配）或创建失败时自动退到它。
+ * 这条顺序是有依据的：
+ *   ① **ExoPlayer** —— 新系统上最稳（软硬解切换、容器兼容性都好）；更关键的是它取流走
+ *      **Java 网络栈**，在 Android 4.x 上能吃到我们装的 Conscrypt（现代 TLS），
+ *      是唯一能让老机器真正播出来的内核；
+ *   ② **IJK** —— FFmpeg 内核，编解码兼容性广（ExoPlayer 建不起来时用）；
+ *   ③ **系统 MediaPlayer** —— 最后的保底，什么都不行时至少试一次。
  *
- * 再加一层运行时的：页面发现"用 IJK 播不出来"，可以调 {@link #forceSystemKernel()} 强制切到
- * 系统内核并重建播放器（见 FeedActivity 的 fallbackToSystemKernel）。
+ * 两级降级都做了：
+ *   · **启动时**：前面那个内核创建失败（so 装不上等）→ 自动退到下一个；
+ *   · **运行时**：当前内核播不出来 → {@link #fallbackToNext(String)} 降一级 + 重建播放器重放。
  *
- * 三层叠起来的目标只有一个：**任何一台机器上，至少有一个内核能把视频放出来。**
+ * 一旦降级就不再回头（进程内）：能触发降级说明这个内核对当前设备/内容确实不行，
+ * 切回去只会让用户再看一次同样的故障。下次冷启动会重新按 ExoPlayer 优先来。
  */
 public class FallbackPlayerFactory extends PlayerFactory<AbstractPlayer> {
 
-    /**
-     * 是否已被强制切到系统内核（进程级）。
-     *
-     * 为什么是"一旦切了就回不去"：能触发这个开关说明 IJK 在这台机器上确实有问题
-     * （解码失败、花屏、卡死…），再切回去只会让用户再看一次同样的故障。
-     * 下次冷启动会重新按 IJK 优先来。
-     */
-    private static volatile boolean sForceSystemKernel = false;
+    public static final int KERNEL_EXO = 0;
+    public static final int KERNEL_IJK = 1;
+    public static final int KERNEL_SYSTEM = 2;
 
-    /** 供页面在"IJK 播不出来"时调用 */
-    public static void forceSystemKernel(String why) {
-        if (!sForceSystemKernel) {
-            sForceSystemKernel = true;
-            AppLog.i("player", "已强制切到系统内核（原因：" + why + "）");
+    /** 当前内核档位（进程级） */
+    private static volatile int sLevel = KERNEL_EXO;
+    /** 某内核被判定不可用后不再尝试 */
+    private static volatile boolean sExoBroken = false;
+    private static volatile boolean sIjkBroken = false;
+
+    /** 运行时降级：当前内核播不出来时调用 */
+    public static void fallbackToNext(String why) {
+        int old = sLevel;
+        if (sLevel == KERNEL_EXO) {
+            sExoBroken = true;
+            sLevel = KERNEL_IJK;
+        } else if (sLevel == KERNEL_IJK) {
+            sIjkBroken = true;
+            sLevel = KERNEL_SYSTEM;
+        } else {
+            return;   // 已经是最后一个内核，没得退了
         }
+        AppLog.i("player", "内核降级：" + name(old) + " → " + name(sLevel) + "（原因：" + why + "）");
     }
 
-    public static boolean isSystemForced() {
-        return sForceSystemKernel;
+    /** 是否已经退到最后一个内核（系统 MediaPlayer）—— 再失败就不是内核的问题了 */
+    public static boolean isLastKernel() {
+        return sLevel >= KERNEL_SYSTEM;
+    }
+
+    public static String currentKernelName() {
+        return name(sLevel);
+    }
+
+    private static String name(int level) {
+        if (level == KERNEL_EXO) return "ExoPlayer";
+        if (level == KERNEL_IJK) return "IJK";
+        return "系统MediaPlayer";
     }
 
     @Override
     public AbstractPlayer createPlayer(Context context) {
-        // ① 一级：IJK
-        if (!sForceSystemKernel && IjkPlayer.isAvailable()) {
+        // ① ExoPlayer
+        if (sLevel <= KERNEL_EXO && !sExoBroken) {
+            try {
+                AbstractPlayer p = new ExoPlayerKernel(context);
+                p.initPlayer();
+                AppLog.i("player", "本机使用 ExoPlayer 内核");
+                return p;
+            } catch (Throwable t) {
+                // ExoPlayer 2.19 起要 API 21；我们用 2.18 并 overrideLibrary 放行了，
+                // 万一在 14/15 上真起不来，这里兜住即可
+                sExoBroken = true;
+                AppLog.i("player", "ExoPlayer 创建失败，退到 IJK：" + t);
+            }
+        }
+        // ② IJK
+        if (sLevel <= KERNEL_IJK && !sIjkBroken && IjkPlayer.isAvailable()) {
             try {
                 AbstractPlayer p = IjkPlayer.create(context);
                 AppLog.i("player", "本机使用 IJK 内核");
                 return p;
             } catch (Throwable t) {
                 // IjkMediaPlayer 的静态块加载 so 失败时抛的是 Error —— 这里必须兜住
-                AppLog.i("player", "IJK 创建失败，退回系统内核：" + t);
+                sIjkBroken = true;
+                AppLog.i("player", "IJK 创建失败，退到系统内核：" + t);
             }
         }
-        // ② 二级：系统 MediaPlayer
+        // ③ 系统 MediaPlayer
         AppLog.i("player", "本机使用系统 MediaPlayer 内核");
         return new AndroidMediaPlayer(context);
     }

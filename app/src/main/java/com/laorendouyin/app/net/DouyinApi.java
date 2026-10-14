@@ -94,24 +94,32 @@ public final class DouyinApi {
 
     public DouyinApi(Signer signer) {
         this.signer = signer;
-        this.client = new OkHttpClient.Builder()
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .followRedirects(true)
                 // Android 4.4 及以下**默认不启用 TLS 1.2**，而抖音的接口与视频 CDN 全在 HTTPS 上。
                 // 显式把 TLS 1.2 排在协商最前面，让老设备也能连上。
-                .connectionSpecs(buildTlsSpecs())
-                .build();
+                .connectionSpecs(buildTlsSpecs());
+        // 老系统上系统 CA 太旧，认不出抖音的证书链 —— 换成自带的那份（见 TlsCompat）
+        javax.net.ssl.SSLContext tlsCtx = com.laorendouyin.app.util.TlsCompat.sslContext();
+        javax.net.ssl.X509TrustManager tm = com.laorendouyin.app.util.TlsCompat.trustManager();
+        if (tlsCtx != null && tm != null) {
+            builder.sslSocketFactory(tlsCtx.getSocketFactory(), tm);
+        }
+        this.client = builder.build();
     }
 
     /**
      * TLS 版本优先级：1.2 → 1.1 → 1.0。
      *
-     * 为什么不写成"只允许 1.2"：部分老 CDN 只支持更低版本，一刀切会让它们直接连不上；
-     * 按优先级排好，优先协商到现代的 TLS，同时不把老服务器挡在门外。
+     * ⚠️ 套件列表必须用 {@link okhttp3.ConnectionSpec#COMPATIBLE_TLS} 那一套，**不能**用 MODERN_TLS：
+     * MODERN_TLS 带的是一组现代加密套件，**Android 4.4 上一个都不支持** —— 协商失败后会退回
+     * 系统默认的 TLS 1.0，服务器直接回 `tlsv1 alert protocol version`（实测踩到）。
+     * COMPATIBLE_TLS 的套件表包含老系统也能用的那些，再叠加 TLS 1.2 就能在新老设备上都握手成功。
      */
     private static java.util.List<okhttp3.ConnectionSpec> buildTlsSpecs() {
-        okhttp3.ConnectionSpec tls = new okhttp3.ConnectionSpec.Builder(okhttp3.ConnectionSpec.MODERN_TLS)
+        okhttp3.ConnectionSpec tls = new okhttp3.ConnectionSpec.Builder(okhttp3.ConnectionSpec.COMPATIBLE_TLS)
                 .tlsVersions(okhttp3.TlsVersion.TLS_1_2,
                         okhttp3.TlsVersion.TLS_1_1,
                         okhttp3.TlsVersion.TLS_1_0)

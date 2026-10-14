@@ -76,9 +76,17 @@ public class DyApp extends Application {
         // 跟随系统会在浅色模式下把默认字色换成深色，配深色背景直接看不见。固定夜间。
         androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
                 androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES);
-        enableTls12OnOldDevices();
+        // ⚠️ 日志必须**最先**初始化：下面这些初始化步骤都会打日志，
+        //    而 AppLog 在 init 之前的调用是看不到的 —— 排查老设备问题时全靠这些日志，
+        //    少一行就可能把"SSL 握手失败"这种事查半天。
         AppLog.init(this);
         CrashShield.install(this);
+        // 老系统的两件事一起做（都在 TlsCompat 里）：
+        //   ① 抬到 TLS 1.2 —— 系统默认只给 TLS 1.0/1.1，服务器早就不收了
+        //   ② 自带一份新 CA —— 系统内置根证书是出厂那年的，认不出抖音现在的证书链
+        // ⚠️ 这两件事必须放在**同一个 SSLContext** 里，否则后设的会把先设的覆盖掉
+        //    （踩过：先设 TLS1.2 再 setDefaultSSLSocketFactory("TLS") → 又退回 1.0）
+        com.laorendouyin.app.util.TlsCompat.install(this);
         installPlayerKernel();
         AppLog.i("app", "应用启动（myDVQ 极简版）");
     }

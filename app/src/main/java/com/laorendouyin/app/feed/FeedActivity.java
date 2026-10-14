@@ -87,12 +87,6 @@ public class FeedActivity extends UiActivity {
      */
     private boolean mProxyFallbackTried;
 
-    /**
-     * 本条是否已经"换内核重试"过。
-     * 换内核是重操作（要重建整个 VideoView），而且一旦换就全局有效，
-     * 所以每条视频只做一次。
-     */
-    private boolean mKernelFallbackTried;
 
     /**
      * 连续多少页"被过滤掉、一条都没留下"。
@@ -390,7 +384,7 @@ public class FeedActivity extends UiActivity {
                     //   ① 走了代理却播不出来 → 删坏缓存改直连
                     //   ② 直连也播不出来（或本来就是直连）→ 换播放内核（IJK → 系统）
                     if (!fallbackToDirectPlay()) {
-                        fallbackToSystemKernel();
+                        fallbackToNextKernel();
                     }
                 }
             }
@@ -435,13 +429,16 @@ public class FeedActivity extends UiActivity {
      * 实现要点：VideoView 的播放器是**构造时**从工厂取的，所以换内核必须重建它。
      * 换完只把当前这条重放一遍，不打断用户其他操作。
      */
-    private void fallbackToSystemKernel() {
-        if (mKernelFallbackTried || mPlayingRawUrl.isEmpty()) return;
-        // 已经是系统内核（IJK 压根没装上）就没什么可换的了
-        if (com.laorendouyin.app.player.FallbackPlayerFactory.isSystemForced()) return;
-        mKernelFallbackTried = true;
-        com.laorendouyin.app.util.AppLog.i("feed", "当前内核播不出来 → 换成系统内核重放");
-        com.laorendouyin.app.player.FallbackPlayerFactory.forceSystemKernel("播放出错");
+    private void fallbackToNextKernel() {
+        if (mPlayingRawUrl.isEmpty()) return;
+        // 已退到最后一个内核（系统 MediaPlayer）就没得退了 —— 再失败是内容/网络的问题
+        if (com.laorendouyin.app.player.FallbackPlayerFactory.isLastKernel()) return;
+        // ⚠️ 这里**不用**"每条只降一次"的闸门：三个内核最多降两次，
+        //    isLastKernel() 本身就保证了有界，不需要额外的计数器。
+        final String from = com.laorendouyin.app.player.FallbackPlayerFactory.currentKernelName();
+        com.laorendouyin.app.player.FallbackPlayerFactory.fallbackToNext("播放出错");
+        final String to = com.laorendouyin.app.player.FallbackPlayerFactory.currentKernelName();
+        com.laorendouyin.app.util.AppLog.i("feed", "当前内核（" + from + "）播不出来 → 换 " + to + " 重放");
 
         try {
             // 记住播放器挂在哪个容器里
@@ -458,7 +455,7 @@ public class FeedActivity extends UiActivity {
                 container.addView(mVideoView, 0);
                 mVideoView.setUrl(mPlayingRawUrl, com.laorendouyin.app.net.DouyinApi.playHeaders());
                 mVideoView.start();
-                com.laorendouyin.app.util.AppLog.i("feed", "已用系统内核重放当前视频");
+                com.laorendouyin.app.util.AppLog.i("feed", "已用 " + to + " 内核重放当前视频");
             } else {
                 // 容器没了（页面被回收过）→ 走常规挂载流程
                 startPlay(mCurPos);
