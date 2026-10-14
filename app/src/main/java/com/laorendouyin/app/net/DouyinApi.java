@@ -194,6 +194,19 @@ public final class DouyinApi {
     }
 
     /**
+     * 当前构建变体的**内容源频道 tag_id**；空串表示走「推荐」流。
+     *
+     * 由 `app/build.gradle` 的 productFlavors 注入（standard=""、channel="300219" 等）。
+     * ⚠️ 频道不能靠推荐流的 tag_id 实现（实测无效），必须换到 channel/feed 端点 —— 见 fetchFeed。
+     */
+    public static final String CHANNEL_TAG_ID = com.laorendouyin.app.BuildConfig.CHANNEL_TAG_ID;
+
+    /** 当前变体是不是「频道专版」 */
+    public static boolean isChannelEdition() {
+        return CHANNEL_TAG_ID != null && !CHANNEL_TAG_ID.isEmpty();
+    }
+
+    /**
      * 拉信息流（**游客身份**）。每次调用按方向递增各自的 refresh_index 翻页。
      *
      * 实测（2026-10-13，probe/probe_douyin.js）：不登录也能拿到真实内容 ——
@@ -206,8 +219,10 @@ public final class DouyinApi {
         int idx = getRefreshIndex(mode) + 1;
         mRefreshIndex.put(mode, idx);
         String query = buildFeedQuery(count, idx, mode, signer);
+        // 内容源按变体切换：频道版走 channel/feed（并带上 tag_id），普通版走 tab/feed
+        String path = isChannelEdition() ? "/aweme/v1/web/channel/feed/" : "/aweme/v1/web/tab/feed/";
         Request req = new Request.Builder()
-                .url("https://www.douyin.com/aweme/v1/web/tab/feed/?" + query)
+                .url("https://www.douyin.com" + path + "?" + query)
                 .header("User-Agent", UA)
                 .header("Referer", "https://www.douyin.com/")
                 .header("Cookie", cookieHeader())
@@ -238,7 +253,8 @@ public final class DouyinApi {
         p.put("round_trip_time", "500");     // feed 这个接口实测探针发的是 500，保持原值
         p.put("count", String.valueOf(count));
         p.put("refresh_index", String.valueOf(refreshIndex));
-        p.put("tag_id", "");
+        // 频道专版：tag_id 必须真给值（channel/feed 认它）；普通版保持空串
+        p.put("tag_id", CHANNEL_TAG_ID);
         StringBuilder q = new StringBuilder();
         for (Map.Entry<String, String> e : p.entrySet()) {
             if (q.length() > 0) q.append('&');

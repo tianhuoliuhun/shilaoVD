@@ -77,9 +77,32 @@
 
 ---
 
+## 两个版本
+
+同一套代码出两个 APK，**包名不同，可以同时装在一台手机上**、各自独立升级：
+
+| 版本 | 包名 | 内容 |
+|---|---|---|
+| **普通版** | `com.laorendouyin.app` | 抖音「推荐」流 |
+| **频道专版** | `com.laorendouyin.app.channel` | 只刷某一个频道（默认**三农**） |
+
+频道专版是给"只想看某一类内容"准备的 —— 内容**不是靠客户端筛选**，
+而是直接向抖音要那个频道（`/aweme/v1/web/channel/feed/`）。
+
+> ⚠️ **为什么不能按关键词做**（比如"上海话专版"）：实测**游客态下抖音不给** ——
+> 搜索接口返回 `2483`「请先登录」、话题视频列表返回空 body、博主主页与视频详情
+> `403`（缺 `Uifid`）、视频详情页被 JS 虚拟机保护；而推荐流里这类内容占比实测接近 0。
+> 详见 [docs/FEASIBILITY_PROBE.md](docs/FEASIBILITY_PROBE.md)。
+
+**换频道**：改 `app/build.gradle` 里 channel 变体的 `CHANNEL_TAG_ID` / `CHANNEL_NAME`
+（17 个频道 id 见上文那份实测报告），并同步改 `app/src/channel/res/values/strings.xml` 的应用名。
+
+---
+
 ## 安装
 
-1. 到 [Releases](../../releases) 下载 `app-release.apk`
+1. 到 [Releases](../../releases) 下载对应的 APK
+   （`app-standard-release.apk` 普通版 / `app-channel-release.apk` 频道专版）
 2. 传到手机上安装（系统可能会提示"未知来源"，允许即可）
 
 **想让它开机直达**：系统设置 → 应用 → 默认应用 → 主屏幕应用 → 选「老人抖抖」。
@@ -207,13 +230,17 @@ securetransport enabled.`，然后以错误码 `-10000` 失败。
 > ⚠️ 仓库里**没有** `gradlew`（wrapper 未入库），请用本机安装的 Gradle 8/9。
 
 ```bash
+gradle :app:assembleStandardRelease   # 普通版（推荐流）
+gradle :app:assembleChannelRelease    # 频道专版（默认三农）
 gradle :app:assembleDebug             # 调试包
-gradle :app:assembleRelease -x lintVitalRelease   # 发布包（需根目录放 keystore.properties）
 gradle :app:testDebugUnitTest         # 单元测试
 ```
 
-> 关于 `-x lintVitalRelease`：发布构建里那个 lint 任务实测会长时间挂起，且与出包无关，
-> 直接跳过即可。
+产物按变体分目录：`app/build/outputs/apk/standard/release/` 与 `.../channel/release/`。
+
+> 关于 lint：发布构建里的 `lintVital*` 任务实测会长时间挂起，且与出包无关。
+> 需要跳过时用 `-x lintVitalStandardRelease -x lintVitalChannelRelease`
+> （⚠️ 有了 flavor 之后，不能再写裸的 `-x lintVitalRelease`）。
 
 `keystore.properties`（不入库，缺失时 release 会退化为未签名）：
 

@@ -1,0 +1,23 @@
+{
+  "cookieLen": 133,
+  "search_single": {
+    "url": "/aweme/v1/web/general/search/single/",
+    "http": 200,
+    "raw": "{\"log_pb\":{\"impr_id\":\"20261014213414C6D11585D4785EFC1BBF\"},\"status_code\":2483,\"status_msg\":\"请先登录，再继续搜索吧\"}"
+  },
+  "challenge_search": {
+    "url": "/aweme/v1/web/challenge/search/",
+    "http": 200,
+    "raw": "{\"challenge_list\":null,\"log_pb\":{\"impr_id\":\"20261014213414778076821AF1DBAEC534\"},\"status_code\":2483,\"status_msg\":\"请先登录，再继续搜索吧\"}"
+  },
+  "search_item": {
+    "url": "/aweme/v1/web/search/item/",
+    "http": 200,
+    "raw": "{\"log_pb\":{\"impr_id\":\"20261014213415FE7F5899DC8D89731136\"},\"status_code\":2483,\"status_msg\":\"请先登录，再继续搜索吧\"}"
+  },
+  "tab_feed": {
+    "url": "/aweme/v1/web/tab/feed/",
+    "http": 200,
+    "raw": "{\"aweme_list\":[{\"ad_candidates\":null,\"ai_follow_images\":null,\"authentication_token\":\"MS4wLjAAAAAA5sw4vwm9OG3KeqboDm8txHBbwgMPoGP_1cEE0E7KARVv6hbFwmYYn6pTSd63hFRqASg4iLUUf_2e8HoRBsb8meXU4qg5B0XIteEB4nnV-nnMCxr0sfnMJcnDlNYMAORqfHU9A0Njd3GDYGU7xoW6FQLzoeHDfCif_yUoCgODJsNXUfGWzboCi76Al-xhGnRzHMYVTeyAMnxpxIfvCkBR6FgvuZyi2LIiPTtvRjQmTxStEucxyryyBFN8ElyBUn9g\",\"author\":{\"avatar_thumb\":{\"height\":720,\"uri\":\"100x100/aweme-avatar/tos-cn-i-c9aec8xkvj_8bb9b9623c4f4108822dcab56327160d\",\"url_list\":[\"https://p3-pc.douyinpic.com/aweme/100x100/aweme-avatar/tos-cn-i-c9aec8xkvj_8bb9b9623c4f4108822dcab56327160d.jpeg?from=327834062\\u0026se=false\\u0026biz_tag=feed_avatar\\u0026l=202610142134150F3CD473B8504302ADEE\"],\"width\":720},\"common_interest\":null,\"cover_url\":[{\"height\":720,\"uri\":\"c8510002be9a3a61aad2\",\"url_list\":[\"https://p3-pc-sign.douyinpic.com/obj/c8510002be9a3a61aad2?lk3s=138a59ce\\u0026x-expires=1793192400\\u0026x-signature=4Bydrf8mu4QzRxYFoUFnGe8IuyM%3D\\u0026from=327834062\",\"https://p9-pc-sign.douyinpic.com/obj/c8510002be9a3a61aad2?lk3s=138a59ce\\u0026x-expires=1793192400\\u0026x-signature=eAea%2BxKc%2Bdbq4UXUlSR2FnL5m5o%3D\\u0026from=327834062\"],\"width\":720}],\"custom_verify\":\"\",\"enterprise_verify_reason\":\"\",\"follow_status\":0,\"follower_status\":0,\"is_ad_fake\":false,\"nickname\":\"野兽国语配音\",\"not_seen_item_id_list\":null,\"prevent_download\":false,\"private_relation_list\":null,\"room_id\":0,\"sec_uid\":\"MS4wLjABAAAAqXcP_062GDD5oYUAXn5l9im7InL1j5zBlGFxmqyVkDs\",\"share_info\":{\"share_desc\":\"\",\"share_qrcode_url\":{\"height\":720,\"uri\":\"4d59000b46a05b3fbe51\",\"url_list\":[\"https://p9-pc-sign.douyinpic.com/obj/4d59000b46a05b3fbe51?lk3s=138a59ce\\u0026x-expires=1792004400\\u0026x-signature=R%2BVV3Zoo0kGtpwdoaI1njazrCKM%3D\\u0026from=327834062\",\"https://p3-pc-sign.douyinpic.com/obj/4d59000b46a05b3fbe51?lk3s=138a59ce\\u0026x-expires=1792004400\\u0026x-signature=Q845DZ6PPXRORvNdjgbgj5a%2B%2Bgc%3D\\u0026from=327834062\"],\"width\":720},\"share_title\":\"\",\"share_title_myself\":\"\",\"share_title_other\":\"\",\"share_url\":\"\",\"share_weibo_"
+  }
+}

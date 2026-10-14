@@ -26,8 +26,42 @@ android {
         // minSdk 14 必需：Android 5.0（API 20）及以下没有系统级 multidex，
         // 方法数超过 64K 就必须显式开启（配合 DyApp 里的 MultiDex.install）
         multiDexEnabled true
-        versionCode 11
-        versionName '1.10'
+        versionCode 12
+        versionName '1.11'
+    }
+
+    // ============================================================
+    // 内容源变体（2026-10-14）：**同一套代码出两个 APK**
+    //   · standard —— 普通版：抖音「推荐」流（tab/feed）
+    //   · channel  —— 频道专版：只刷某一个频道（channel/feed + tag_id）
+    //
+    // ⚠️ 为什么频道必须换端点：实测推荐流的 `tag_id` 参数**无效**（放进去也不换内容），
+    //    只有 `/aweme/v1/web/channel/feed/` 认它（见 docs/FEASIBILITY_PROBE.md）。
+    // ⚠️ 为什么两个包名不同：要让它们能被**同时安装**、各自独立升级；
+    //    而 standard 保持原 applicationId 不变，老用户才能继续覆盖升级。
+    // 🔧 想换频道：只改下面 channel 里的 CHANNEL_TAG_ID / CHANNEL_NAME 两个值即可，
+    //    17 个可选频道的 id 见 docs/FEASIBILITY_PROBE.md。
+    // ============================================================
+    flavorDimensions 'content'
+    productFlavors {
+        standard {
+            dimension 'content'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '""'
+            buildConfigField 'String', 'CHANNEL_NAME', '""'
+        }
+        channel {
+            dimension 'content'
+            applicationIdSuffix '.channel'
+            // 三农 300219：实测内容最贴合农村/老人（赶海、乡村生活、地方美食、非遗手作）
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300219"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"三农"'
+        }
+    }
+
+    // ⚠️ AGP 8 起 BuildConfig 默认不生成，用 buildConfigField 必须显式打开，
+    //    否则编译报 "cannot find symbol: class BuildConfig"
+    buildFeatures {
+        buildConfig true
     }
 
     signingConfigs {
