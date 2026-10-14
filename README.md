@@ -77,25 +77,36 @@
 
 ---
 
-## 两个版本
+## 18 个版本（1 普通 + 17 频道）
 
-同一套代码出两个 APK，**包名不同，可以同时装在一台手机上**、各自独立升级：
+同一套代码一次构建出 **18 个 APK**，**包名各不相同，可以任意组合装在同一台手机上**、
+各自独立升级：
 
 | 版本 | 包名 | 内容 |
 |---|---|---|
-| **普通版** | `com.laorendouyin.app` | 抖音「推荐」流 |
-| **频道专版** | `com.laorendouyin.app.channel` | 只刷某一个频道（默认**三农**） |
+| **普通版** | `com.laorendouyin.app` | 抖音「推荐」流（原样） |
+| **17 个频道版** | `com.laorendouyin.app.<频道>` | 各自只刷一个频道 |
 
-频道专版是给"只想看某一类内容"准备的 —— 内容**不是靠客户端筛选**，
-而是直接向抖音要那个频道（`/aweme/v1/web/channel/feed/`）。
+频道版的应用名会带后缀（「老人抖抖·美食」「老人抖抖·三农」…），装在一起一眼能分清。
+**17 个频道全部实测有内容**（各返回 10 条）：
+
+`全部` / `公开课` / `美食` / `游戏` / `二次元` / `体育` / `音乐` / `知识` /
+`小剧场` / `影视` / `生活vlog` / `亲子` / `汽车` / `三农` / `动物` / `旅行` / `美妆穿搭`
+
+内容**不是靠客户端筛选**，而是直接向抖音要那个频道（`/aweme/v1/web/channel/feed/`）。
+
+> ⚠️ **频道版不做"方向分流"**：普通版是"竖着拿刷竖屏、横着拿刷横屏"，但实测
+> **美食 / 游戏 / 二次元 / 影视 四个频道抽 10 条全是横屏**，照旧过滤会让这几个包
+> **竖着拿永远空屏**。所以频道版一律不过滤（代价是竖屏时可能看到横屏视频、上下留黑边）。
 
 > ⚠️ **为什么不能按关键词做**（比如"上海话专版"）：实测**游客态下抖音不给** ——
 > 搜索接口返回 `2483`「请先登录」、话题视频列表返回空 body、博主主页与视频详情
 > `403`（缺 `Uifid`）、视频详情页被 JS 虚拟机保护；而推荐流里这类内容占比实测接近 0。
 > 详见 [docs/FEASIBILITY_PROBE.md](docs/FEASIBILITY_PROBE.md)。
 
-**换频道**：改 `app/build.gradle` 里 channel 变体的 `CHANNEL_TAG_ID` / `CHANNEL_NAME`
-（17 个频道 id 见上文那份实测报告），并同步改 `app/src/channel/res/values/strings.xml` 的应用名。
+**增删频道**：在 `app/build.gradle` 的 `productFlavors` 里照抄一块（改 flavor 名 /
+`CHANNEL_TAG_ID` / `CHANNEL_NAME`），再补一个
+`app/src/<flavor 名>/res/values/strings.xml` 覆盖应用名即可。
 
 ---
 
@@ -230,17 +241,18 @@ securetransport enabled.`，然后以错误码 `-10000` 失败。
 > ⚠️ 仓库里**没有** `gradlew`（wrapper 未入库），请用本机安装的 Gradle 8/9。
 
 ```bash
-gradle :app:assembleStandardRelease   # 普通版（推荐流）
-gradle :app:assembleChannelRelease    # 频道专版（默认三农）
-gradle :app:assembleDebug             # 调试包
-gradle :app:testDebugUnitTest         # 单元测试
+gradle :app:assembleRelease            # 一次出全部 18 个包（推荐）
+gradle :app:assembleStandardRelease    # 只出普通版
+gradle :app:assembleSannongRelease     # 只出某个频道（flavor 名见 build.gradle）
+gradle :app:assembleDebug              # 调试包
+gradle :app:testDebugUnitTest          # 单元测试
 ```
 
-产物按变体分目录：`app/build/outputs/apk/standard/release/` 与 `.../channel/release/`。
+产物按变体分目录：`app/build/outputs/apk/<flavor>/release/app-<flavor>-release.apk`。
 
-> 关于 lint：发布构建里的 `lintVital*` 任务实测会长时间挂起，且与出包无关。
-> 需要跳过时用 `-x lintVitalStandardRelease -x lintVitalChannelRelease`
-> （⚠️ 有了 flavor 之后，不能再写裸的 `-x lintVitalRelease`）。
+> 关于 lint：`lintVital*` 实测会长时间挂起且与出包无关，已在 `build.gradle` 里
+> 用 `lint { checkReleaseBuilds = false }` 关掉 —— 有了 flavor 之后，命令行上也没法
+> 再用单个 `-x lintVitalRelease` 规避（那要写全 18 个任务名）。
 
 `keystore.properties`（不入库，缺失时 release 会退化为未签名）：
 

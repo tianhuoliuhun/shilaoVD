@@ -26,8 +26,8 @@ android {
         // minSdk 14 必需：Android 5.0（API 20）及以下没有系统级 multidex，
         // 方法数超过 64K 就必须显式开启（配合 DyApp 里的 MultiDex.install）
         multiDexEnabled true
-        versionCode 12
-        versionName '1.11'
+        versionCode 13
+        versionName '1.12'
     }
 
     // ============================================================
@@ -49,12 +49,110 @@ android {
             buildConfigField 'String', 'CHANNEL_TAG_ID', '""'
             buildConfigField 'String', 'CHANNEL_NAME', '""'
         }
-        channel {
+        // ---- 以下 17 个：每个频道一个独立包（2026-10-14）----
+        // 全部 17 个频道实测 `channel/feed` 均可用（各返回 10 条，见 probe/probe_all_channels.js）。
+        // 换/增频道只要照抄一块，并补一个 app/src/<flavor>/res/values/strings.xml 覆盖应用名。
+        quanbu {
             dimension 'content'
-            applicationIdSuffix '.channel'
-            // 三农 300219：实测内容最贴合农村/老人（赶海、乡村生活、地方美食、非遗手作）
+            applicationIdSuffix '.quanbu'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"0"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"全部"'
+        }
+        gongkaike {
+            dimension 'content'
+            applicationIdSuffix '.gongkaike'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"100000"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"公开课"'
+        }
+        meishi {
+            dimension 'content'
+            applicationIdSuffix '.meishi'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300204"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"美食"'
+        }
+        youxi {
+            dimension 'content'
+            applicationIdSuffix '.youxi'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300205"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"游戏"'
+        }
+        erciyuan {
+            dimension 'content'
+            applicationIdSuffix '.erciyuan'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300206"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"二次元"'
+        }
+        tiyu {
+            dimension 'content'
+            applicationIdSuffix '.tiyu'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300207"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"体育"'
+        }
+        yinyue {
+            dimension 'content'
+            applicationIdSuffix '.yinyue'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300209"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"音乐"'
+        }
+        zhishi {
+            dimension 'content'
+            applicationIdSuffix '.zhishi'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300213"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"知识"'
+        }
+        xiaojuchang {
+            dimension 'content'
+            applicationIdSuffix '.xiaojuchang'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300214"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"小剧场"'
+        }
+        yingshi {
+            dimension 'content'
+            applicationIdSuffix '.yingshi'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300215"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"影视"'
+        }
+        shenghuo {
+            dimension 'content'
+            applicationIdSuffix '.shenghuo'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300216"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"生活vlog"'
+        }
+        qinzi {
+            dimension 'content'
+            applicationIdSuffix '.qinzi'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300217"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"亲子"'
+        }
+        qiche {
+            dimension 'content'
+            applicationIdSuffix '.qiche'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300218"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"汽车"'
+        }
+        sannong {
+            dimension 'content'
+            applicationIdSuffix '.sannong'
             buildConfigField 'String', 'CHANNEL_TAG_ID', '"300219"'
             buildConfigField 'String', 'CHANNEL_NAME', '"三农"'
+        }
+        dongwu {
+            dimension 'content'
+            applicationIdSuffix '.dongwu'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300220"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"动物"'
+        }
+        lvxing {
+            dimension 'content'
+            applicationIdSuffix '.lvxing'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300221"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"旅行"'
+        }
+        meizhuang {
+            dimension 'content'
+            applicationIdSuffix '.meizhuang'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"300222"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"美妆穿搭"'
         }
     }
 
@@ -88,6 +186,13 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // 发布构建里的 lintVital* 任务实测会长时间挂起（20 分钟量级）且与出包无关。
+    // ⚠️ flavor 化之后无法再用命令行的 `-x lintVitalRelease`（要写全 18 个任务名），
+    //    所以在这里一次性关掉；需要 lint 时单独跑 `gradle :app:lintStandardRelease` 之类。
+    lint {
+        checkReleaseBuilds = false
     }
 
     testOptions {
