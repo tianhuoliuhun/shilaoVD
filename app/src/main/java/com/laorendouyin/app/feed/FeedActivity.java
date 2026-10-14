@@ -406,12 +406,22 @@ public class FeedActivity extends UiActivity {
      */
     private boolean fallbackToDirectPlay() {
         if (!mPlayingViaProxy || mProxyFallbackTried || mPlayingRawUrl.isEmpty()) return false;
+        // ⚠️ "必须走代理"的场景**不做这层降级**（2026-10-14 修「安卓 4.4 播不了」）：
+        //    直连 https 对 IJK 是死路（它的 FFmpeg 没编 https 协议，必报 Protocol not found），
+        //    对老系统的解码器同样无解 —— 这种"代理播不出来"是解码/内容问题，
+        //    应该交给下一层「换播放内核」（fallbackToNextKernel），而不是改直连。
+        if (com.laorendouyin.app.cache.PreloadManager.mustUseProxy()) return false;
         mProxyFallbackTried = true;
-        com.laorendouyin.app.util.AppLog.i("feed", "代理播放失败 → 删掉坏缓存，改用直连重播");
+        com.laorendouyin.app.util.AppLog.i("feed", "代理播放失败 → 删掉坏缓存，重取播放地址");
         com.laorendouyin.app.cache.ProxyVideoCacheManager.evict(this, mPlayingRawUrl);
         try {
             mVideoView.release();
-            mVideoView.setUrl(mPlayingRawUrl);
+            // ⚠️ 不能硬编码直连 rawUrl：删完坏缓存后由 getPlayUrl 重新决定 ——
+            //    非 mustProxy 场景缓存已不够门槛，它会自然给出直连（保持原语义）；
+            //    mustProxy 场景则继续给代理（坏缓存已删，代理会重新下）。
+            String retryUrl = mPreloadManager.getPlayUrl(mPlayingRawUrl);
+            mPlayingViaProxy = !retryUrl.equals(mPlayingRawUrl);
+            mVideoView.setUrl(retryUrl, com.laorendouyin.app.net.DouyinApi.playHeaders());
             mVideoView.start();
         } catch (Throwable e) {
             com.laorendouyin.app.util.AppLog.i("feed", "降级重播失败：" + e);
@@ -453,7 +463,13 @@ public class FeedActivity extends UiActivity {
             mVideoView = createVideoView();
             if (container != null) {
                 container.addView(mVideoView, 0);
-                mVideoView.setUrl(mPlayingRawUrl, com.laorendouyin.app.net.DouyinApi.playHeaders());
+                // ⚠️ 换内核后必须**重新取播放地址**：这一条原来可能是直连 https
+                //    （换到 IJK 就必挂：FFmpeg 未编 https）；反过来从 IJK 换到系统内核时，
+                //    代理地址也依然可用。统一交给 getPlayUrl 决定。
+                String replayUrl = mPreloadManager.getPlayUrl(mPlayingRawUrl);
+                mPlayingViaProxy = !replayUrl.equals(mPlayingRawUrl);
+                mProxyFallbackTried = false;   // 换了内核＝重新开始，允许新内核再走一次降级
+                mVideoView.setUrl(replayUrl, com.laorendouyin.app.net.DouyinApi.playHeaders());
                 mVideoView.start();
                 com.laorendouyin.app.util.AppLog.i("feed", "已用 " + to + " 内核重放当前视频");
             } else {

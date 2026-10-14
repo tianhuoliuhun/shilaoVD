@@ -266,6 +266,25 @@ public class PreloadManager {
      *
      * 这一层保证的是"**播放永远不会因为缓存层的问题而失败**"—— 最差也有直连兜底。
      */
+    /**
+     * 这一台设备 / 这个档位下，是否**只能走本地代理**（禁止直连原始地址）。
+     *
+     * 两个来源（2026-10-14 修「安卓 4.4 一条都播不了」时定下）：
+     *   ① 老系统（API<21）：系统解码器解不了抖音的 H.264 High Profile
+     *      （4.4 模拟器的软解器连 High@L3.1 / 576x1024 都 NoSupport），
+     *      IJK 是唯一出路；
+     *   ② 当前档位是 IJK：**IJK 0.8.8 的 FFmpeg 根本没编 https 协议**
+     *      （native 日志：`https protocol not found, recompile FFmpeg with openssl...`
+     *       → `Error (-10000,0)`），只有本地代理的 http://127.0.0.1 打得开。
+     *
+     * ⚠️ 宿主的降级链路（FeedActivity.fallbackToDirectPlay）必须复用这一个判据 ——
+     *    否则"代理失败→改直连"会把 https 重新塞回 IJK，等于把仅剩的活路掐掉。
+     */
+    public static boolean mustUseProxy() {
+        if (android.os.Build.VERSION.SDK_INT < 21) return true;
+        return com.laorendouyin.app.player.FallbackPlayerFactory.isIjkKernel();
+    }
+
     public String getPlayUrl(String rawUrl) {
         PreloadTask task = mPreloadTasks.get(rawUrl);
         if (task != null) {
@@ -274,7 +293,17 @@ public class PreloadManager {
         if (mHttpProxyCacheServer == null || !ProxyVideoCacheManager.isProxyUsable()) {
             return rawUrl;
         }
-        if (!isReadyForPlayback(rawUrl)) {
+        // ⚠️ 「必须走代理」的判据（2026-10-14 修「安卓 4.4 一条都播不了」）：
+        //    IJK 0.8.8 的 FFmpeg **没有编译 https 协议**（实测 native 日志原文：
+        //    `https protocol not found, recompile FFmpeg with openssl, gnutls or
+        //     securetransport enabled.` → 紧接着 `Error (-10000,0)`），
+        //    所以它**永远打不开 https 直连**，只有本地代理的 http://127.0.0.1 能播。
+        //    而老系统的系统 MediaPlayer / ExoPlayer 又解不了抖音的 H.264 High Profile
+        //    （4.4 模拟器的软解器连 High@L3.1 / 576x1024 都是 NoSupport）
+        //    → 老系统上 IJK 是唯一出路，代理是它唯一的入口。
+        //    代理本身是**边下边播**的，不需要等预加载攒够 256KB 门槛。
+        //    注意：这条对"代理已被判定不可用"无效（上面已经返回直连了）。
+        if (!mustUseProxy() && !isReadyForPlayback(rawUrl)) {
             AppLog.i("cache", "缓存未达可播门槛（<256KB），本条直连");
             return rawUrl;
         }

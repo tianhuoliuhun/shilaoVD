@@ -344,7 +344,7 @@ public final class DouyinApi {
     private static String firstUrl(JsonObject video, String key, String awemeId) {
         JsonObject addr = objOf(video, key);
         if (addr == null) return "";
-        return urlFromAddr(addr, awemeId);
+        return urlFromAddr(addr, awemeId, defaultRatio());
     }
 
     /**
@@ -363,6 +363,47 @@ public final class DouyinApi {
         if (sQuality >= 2) return p1080 ? 3 : p720 ? 2 : p540 ? 1 : 0;
         if (sQuality == 1) return p720 ? 3 : p540 ? 2 : 1;
         return p540 ? 3 : p720 ? 2 : 1;
+    }
+
+    /**
+     * 自拼播放地址时的 ratio 参数 —— **这是 Android 4.4「一条都播不了」的根因修复**
+     * （2026-10-14 在 4.4 模拟器上实测定位）。
+     *
+     * 故障链：某些视频的选中档在 url_list 里**没有 www 跳转候选**（只剩必 403 的 CDN 直连）
+     * → 走下面的自拼兜底；而自拼端点 `www.douyin.com/aweme/v1/play/?video_id=...`
+     * **只认 ratio 参数**决定服务端给哪一档 —— 原来这里**硬编码 ratio=1080p**，
+     * 服务端就真给 1080p（实测 274MB / H.264 **High@L5.0** / 1080x1920）。
+     * 而 4.4 的软解器 `OMX.google.h264.decoder` 只支持到 Level 4.x → `NoSupport`
+     * → ExoPlayer 与系统 MediaPlayer 一起阵亡
+     * （日志：format_supported=NO_EXCEEDS_CAPABILITIES / SoftAVC: Decoder failed: -2）。
+     *
+     * 实测：同一 video_id 只换 ratio，服务端返回三条**不同**的 CDN 资源，与档位表精确对应：
+     * ```
+     * ratio=540p  → o0E99wIH5ij...   (208MB, 对应 normal_540_0)
+     * ratio=720p  → 5fb2b4690e84...  (202MB, 对应 normal_720_0)
+     * ratio=1080p → okXSIABqAgsE...  (274MB, 对应 normal_1080_0)
+     * ```
+     *
+     * 规则：按档位名推导；**API < 21 一律夹到 540p** —— 老设备软解上限低，
+     * 1080p High@L5.0 必挂，540p（H.264 High@L3.1）才是能播的那一档。
+     */
+    static String ratioFor(String gearName) {
+        String want = "720p";
+        if (gearName != null) {
+            if (gearName.contains("_1080_")) want = "1080p";
+            else if (gearName.contains("_540_")) want = "540p";
+            else if (gearName.contains("_720_")) want = "720p";
+        }
+        // 老系统：软解器只到 Level 4.x，一律降到 540p —— 这是"能不能播"的分界线
+        if (android.os.Build.VERSION.SDK_INT < 21) want = "540p";
+        return want;
+    }
+
+    /** 没带档位信息时（兜底 play_addr / play_addr_lowbr）用的 ratio */
+    static String defaultRatio() {
+        if (android.os.Build.VERSION.SDK_INT < 21) return "540p";
+        if (sQuality >= 2) return "1080p";
+        return sQuality == 1 ? "720p" : "540p";
     }
 
     /**
@@ -385,9 +426,10 @@ public final class DouyinApi {
             if (optInt(g, "is_h265") != 0 || optInt(g, "is_bytevc1") != 0) continue;
             JsonObject addr = objOf(g, "play_addr");
             if (addr == null) continue;
-            String url = urlFromAddr(addr, awemeId);
-            if (url.isEmpty() || url.contains("/play/dash/")) continue;
+            // ⚠️ gear 必须先取出来：自拼 URL 的 ratio 由档位名决定（见 ratioFor）
             String gear = optString(g, "gear_name");
+            String url = urlFromAddr(addr, awemeId, ratioFor(gear));
+            if (url.isEmpty() || url.contains("/play/dash/")) continue;
             int rank = gearRank(gear);
             long br = optLong(g, "bit_rate");
             if (bestUrl.isEmpty() || rank > bestRank || (rank == bestRank && br < bestBr)) {
@@ -399,27 +441,37 @@ public final class DouyinApi {
         }
         if (bestUrl.isEmpty()) return "";
         // 选档结果落日志：URL 本身看不出档位，不记就没法验证到底播的是哪一档
+        // ⚠️ 再记「是否自拼 + 实际 ratio」—— 4.4 上"选 540p 却拿到 1080p"就是靠这两项查出来的
+        boolean synth = bestUrl.contains("&ratio=");
         com.laorendouyin.app.util.AppLog.i("feed", "选档 " + awemeId + " → " + bestGear
-                + " " + (bestBr / 1000) + "kbps（共 " + gears.size() + " 档候选）");
+                + " " + (bestBr / 1000) + "kbps"
+                + (synth ? "（自拼 ratio=" + ratioFor(bestGear) + "）" : "（档位签名URL）")
+                + " 共 " + gears.size() + " 档");
         return bestUrl;
     }
 
-    private static String urlFromAddr(JsonObject addr, String awemeId) {
+    private static String urlFromAddr(JsonObject addr, String awemeId, String ratio) {
         JsonArray list = arrOf(addr, "url_list");
         if (list == null || list.size() == 0) return "";
         // ⚠️ 真机取证：url_list 里直连 CDN 候选（v*-web*.douyinvod.com）一律 403（带任何请求头/Cookie 均拒），
         // 只有 www.douyin.com 的跳转候选（302→douyinvod 206 video/mp4）可播
         // → 必须优先选跳转式 URL，否则"只显示封面"（播放器拉流失败被静默吞掉）。
+        //
+        // 注意：走这条路的 www 候选**自带档位签名**（file_id + sign + biz_sign），
+        // 服务端按签名给档，此时 ratio 无关紧要。真正需要 ratio 的是下面的自拼兜底。
         for (int i = 0; i < list.size(); i++) {
             String u = list.get(i).getAsString();
             if (u.startsWith("https://www.douyin.com/")) return u;
         }
         // 没给跳转候选时：自己拼官方跳转式播放地址，用 play_addr.uri（形如 v0200fg...）；
         // 不能再回退 list.get(0)——那是必 403 的直连 CDN。
+        // ⚠️ **ratio 就是这一层的档位开关**：自拼端点没有签名，服务端完全按 ratio 决定清晰度。
+        //    曾经硬编码 ratio=1080p → 老设备拿到 High@L5.0 1080p 直接解码失败（见 ratioFor 注释）。
         String uri = optString(addr, "uri");
         if (!uri.isEmpty()) {
             return "https://www.douyin.com/aweme/v1/play/?video_id=" + uri
-                    + "&ratio=1080p&line=0" + (awemeId == null || awemeId.isEmpty() ? "" : "&item_id=" + awemeId);
+                    + "&ratio=" + ratio + "&line=0"
+                    + (awemeId == null || awemeId.isEmpty() ? "" : "&item_id=" + awemeId);
         }
         return "";
     }

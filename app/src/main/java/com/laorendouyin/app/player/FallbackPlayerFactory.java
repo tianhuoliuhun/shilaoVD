@@ -77,6 +77,18 @@ public class FallbackPlayerFactory extends PlayerFactory<AbstractPlayer> {
         return name(sLevel);
     }
 
+    /**
+     * 当前档位是不是 IJK —— 缓存层据此决定"必须走本地代理"。
+     *
+     * 为什么必须问这个：**IJK 0.8.8 的 FFmpeg 根本没有编译 https 协议**，
+     * 直连 https 一定报 Error(-10000)（实测 native 日志：
+     * `https protocol not found, recompile FFmpeg with openssl...`），
+     * 只有本地代理的 http://127.0.0.1 它才打得开。详见 PreloadManager.getPlayUrl。
+     */
+    public static boolean isIjkKernel() {
+        return sLevel == KERNEL_IJK;
+    }
+
     private static String name(int level) {
         if (level == KERNEL_EXO) return "ExoPlayer";
         if (level == KERNEL_IJK) return "IJK";

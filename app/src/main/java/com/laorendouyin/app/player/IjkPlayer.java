@@ -77,7 +77,16 @@ public class IjkPlayer extends AbstractPlayer {
         mMediaPlayer = new IjkMediaPlayer();
         setOptions();
         // ⚠️ IJK 的日志开关叫 setLogEnabled，**没有** setDebug（照 DKPlayer 老代码写会编译不过）
-        mMediaPlayer.setLogEnabled(false);
+        // 老系统（API<21）打开 native 日志：4.4 上 IJK 报 what=-10000 时，没有 native 日志
+        // 完全分不清是「打不开流（TLS/网络）」还是「解码失败」，排查只能靠它。新系统保持关闭免得刷屏。
+        boolean oldSys = android.os.Build.VERSION.SDK_INT < 21;
+        mMediaPlayer.setLogEnabled(oldSys);
+        if (oldSys) {
+            try {
+                IjkMediaPlayer.native_setLogLevel(IjkMediaPlayer.IJK_LOG_INFO);
+            } catch (Throwable ignored) {
+            }
+        }
         mMediaPlayer.setScreenOnWhilePlaying(true);
 
         mMediaPlayer.setOnErrorListener(new IMediaPlayer.OnErrorListener() {
