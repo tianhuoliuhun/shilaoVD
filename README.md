@@ -19,9 +19,9 @@
 （画面里出现的文字都是抖音视频自带的，不是界面画的）：
 
 <p align="center">
-  <img src="docs/screenshots/portrait.png" width="268" alt="竖屏实况：除了顶部的日期/农历/星期，画面上没有任何按钮或标题">
+  <img src="docs/screenshots/portrait-live.png" width="268" alt="竖屏实况：除了顶部的日期/农历/星期，画面上没有任何按钮或标题">
   &nbsp;&nbsp;&nbsp;
-  <img src="docs/screenshots/landscape.png" width="520" alt="横屏实况：转成横屏后自动切到横屏信息流，当前视频不会重新加载">
+  <img src="docs/screenshots/landscape-live.png" width="520" alt="横屏实况：转成横屏后自动切到横屏信息流，当前视频不会重新加载">
 </p>
 
 </div>
