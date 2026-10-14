@@ -137,35 +137,62 @@
 
 ## 播放内核与兜底链
 
-播放准备了**三层兜底**，目标是"任何一台机器上，至少有一个内核能把视频放出来"：
+播放这件事准备了**三条路**，目标是"任何一台机器上，至少有一个内核能把视频放出来"。
 
-| 顺序 | 内核 | 什么情况下起作用 |
+**但内核顺序是按系统版本分开的** —— 这不是理论推导，是**真机 tombstone 换来的**：
+
+| 系统 | 顺序 | 为什么这样排 |
 |---|---|---|
-| ① 默认 | **IJK**（B 站 ijkplayer，底层 FFmpeg） | 一直用。软硬解通吃，老设备/怪格式的兼容性最好 |
-| ② 兜底（仅 Android 5.0 以下） | **ExoPlayer** | IJK 在这台机器上失败时顶上 |
-| ③ 最后 | **系统 MediaPlayer** | 上面两个都不行时的保底 |
+| **Android 5.0 以上** | **只用系统 MediaPlayer**（IJK 直接禁用） | IJK 在这类真机上**必崩**（见坑 1） |
+| **Android 4.x** | **IJK** → ExoPlayer → 系统 MediaPlayer | 那边的系统解码器解不了 High Profile，IJK 是唯一活路（见坑 3） |
 
-三个内核**只降不升**（进程内）：某个内核一旦失败就不再回头 —— 它能失败，就说明它对
-这台机器/这条内容确实不行，切回去只会让用户再看一次同样的故障。下次冷启动重新从 IJK 开始。
+内核**只降不升**（进程内）：某个内核一旦失败就不再回头 —— 它能失败，就说明它对
+这台机器/这条内容确实不行，切回去只会让用户再看一次同样的故障。
 
-> ⚠️ **内核顺序是按"实测成功率"排的，不是按理论优劣排的。**
-> 早先老系统是 ExoPlayer 优先，结果在 Android 4.4 上**第一条视频要白等 11 秒**才失败
-> （它的系统解码器认不出抖音的 H.264 High Profile，只能等超时），
-> 换到 IJK 优先后首条起播 **11.5 秒 → 0.25 秒**。
+### 三个用真机踩出来的坑
 
-### 老设备上的两个坑
+**1. IJK 在真机上会 native 崩溃 —— 所以新系统干脆不用它。**
 
-**1. IJK 自带的 FFmpeg 没有编译 `https` 协议。**
-它的原生日志会明确报 `https protocol not found, recompile FFmpeg with openssl, gnutls or
-securetransport enabled.`，然后以错误码 `-10000` 失败。
-所以**不能把抖音的 https 直连地址直接交给 IJK** —— 得走本机的缓存代理
-（`http://127.0.0.1:…`，由 [AndroidVideoCache](https://github.com/danikula/AndroidVideoCache) 提供）。
-这条在 **Android 5.0 以下、或当前正用 IJK 时是强制的**。
+真机（Redmi / Android 15 / arm64）上反复闪退，抓到的 tombstone 指向同一处：
 
-**2. 老设备的解码器认不出高等级的 H.264。**
-抖音给的 1080p 是 **High Profile @ Level 5.0**，很多老机器（包括 Android 4.4 模拟器里
-那个纯软件解码器）直接报 `NoSupport`。所以**老系统上会主动把清晰度降到 540p**
-（H.264 High@L3.1 才稳），这一档实测能正常解码播放。
+```
+Cmdline: com.laorendouyin.app.laoren
+tid 3418, name: ff_read                     ← IJK 的读线程
+signal 7 (SIGBUS) / 11 (SIGSEGV)，PC 跳到垃圾地址
+#01  libijkffmpeg.so (av_application_on_http_event+24)
+```
+
+这是 **IJK 自己的 bug**：它的 `ijkavapplication` 模块处理 **HTTP 事件回调**时
+访问了失效指针。而**我们的用法必然触发它** —— IJK 的 FFmpeg 没编译 `https`（见坑 2），
+所以每次播放都要绕道本地代理（`http://127.0.0.1:port/https%3A%2F%2F…`），
+于是**每一次 HTTP 事件都会回调进那个坏函数**。
+
+修法就是**新系统不再使用 IJK**：抖音的流都是标准 MP4 / H.264-HEVC，系统 MediaPlayer
+完全够用（真机还有完整硬件解码），没理由为了 IJK 的容器兼容性去冒 native 崩溃的风险。
+**老系统不能跟着禁** —— 那边 IJK 是唯一活路。
+
+**2. IJK 自带的 FFmpeg 没有编译 `https` 协议。**
+
+它的原生日志会明确报：
+
+```
+https protocol not found, recompile FFmpeg with openssl, gnutls or securetransport enabled.
+```
+
+然后以错误码 `-10000` 失败。所以**不能把抖音的 https 直连地址交给 IJK** ——
+得走本机的缓存代理（`http://127.0.0.1:…`，由
+[AndroidVideoCache](https://github.com/danikula/AndroidVideoCache) 提供）。
+这条在 **Android 5.0 以下（也就是还在用 IJK 的地方）是强制的**。
+
+**3. 老设备的解码器认不出高等级的 H.264。**
+
+抖音给的 1080p 是 **High Profile @ Level 5.0**（`avc1.640032`），老机器（包括
+Android 4.4 模拟器里那个纯软件解码器）直接报 `NoSupport`。所以**老系统上会主动把
+清晰度降到 540p**（H.264 High@L3.1 才稳），这一档实测能正常解码播放。
+
+> 📌 **内核顺序是按"实测成功率"排的，不是按理论优劣排的。** 两个反例都很有代表性：
+> 老系统上 ExoPlayer 优先时，4.4 首条要**白等 11 秒**才失败（换成 IJK 后首条起播
+> **11.5 秒 → 0.25 秒**）；而新系统上 IJK 优先时，真机**必崩**。
 
 > ⚠️ 因为引入了 IJK 的 native 库，APK **不再是纯 Java**，
 > 打包了 4 个 ABI：`arm64-v8a` / `armeabi-v7a`（Android 4 必需这个）/ `x86` / `x86_64`。
@@ -182,7 +209,7 @@ securetransport enabled.`，然后以错误码 `-10000` 失败。
 
 > **关于 CPU 架构**：应用里带了 IJK 的 native 库，所以**打包了 4 个 ABI**
 > （`arm64-v8a` / `armeabi-v7a` / `x86` / `x86_64`），覆盖从 2011 年的 32 位老机到现在的 64 位机型。
-> 万一某个架构的 so 加载失败，会自动退到系统 MediaPlayer（见上一节），不会因此打不开。
+> 万一某个架构的 so 加载失败，会自动退到链路上的下一个内核（见上一节），不会因此打不开。
 >
 > **关于老系统**：Android 5.0 以下会额外做三件事 —— 装 **Conscrypt** 换掉系统的老 TLS、
 > 自带一份新的 CA 证书列表（老系统内置的根证书是出厂那年的，认不出现在的证书链），
