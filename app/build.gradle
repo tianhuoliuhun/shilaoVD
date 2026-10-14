@@ -26,8 +26,8 @@ android {
         // minSdk 14 必需：Android 5.0（API 20）及以下没有系统级 multidex，
         // 方法数超过 64K 就必须显式开启（配合 DyApp 里的 MultiDex.install）
         multiDexEnabled true
-        versionCode 13
-        versionName '1.12'
+        versionCode 14
+        versionName '1.13'
     }
 
     // ============================================================
@@ -49,6 +49,21 @@ android {
             buildConfigField 'String', 'CHANNEL_TAG_ID', '""'
             buildConfigField 'String', 'CHANNEL_NAME', '""'
         }
+        // ---- 老人专版：推荐流 + 4 个最适合老人的频道 轮询（2026-10-14）----
+        // 选这四个的依据是实测内容（probe/probe_elder.js 各抓 20 条）：
+        //   三农   —— 乡村生活/赶海/地方美食/非遗手艺，画面导向、几乎不需要文字
+        //   音乐   —— 经典港乐/老歌，是老人的强需求，且能"只听不看"
+        //   美食   —— 吃播直观，无需认字
+        //   动物   —— 萌宠与自然，治愈系
+        // 不选：旅行/亲子（偏年轻博主与年轻父母向）、体育（偏国际年轻赛事）、
+        //       知识/公开课/汽车/游戏/二次元/美妆/小剧场/生活vlog（依赖文字或偏年轻人群）
+        laoren {
+            dimension 'content'
+            applicationIdSuffix '.laoren'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"recommend,300219,300209,300204,300220"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"精选"'
+        }
+
         // ---- 以下 17 个：每个频道一个独立包（2026-10-14）----
         // 全部 17 个频道实测 `channel/feed` 均可用（各返回 10 条，见 probe/probe_all_channels.js）。
         // 换/增频道只要照抄一块，并补一个 app/src/<flavor>/res/values/strings.xml 覆盖应用名。

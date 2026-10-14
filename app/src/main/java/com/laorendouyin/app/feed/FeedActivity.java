@@ -134,18 +134,6 @@ public class FeedActivity extends UiActivity {
                 == Configuration.ORIENTATION_LANDSCAPE;
     }
 
-    /**
-     * 要不要做"方向分流"过滤。
-     *
-     * **频道专版一律不过滤** —— 实测美食 / 游戏 / 二次元 / 影视 这四个频道
-     * **100% 是横屏**（各抽 10 条，竖 0 横 10），若照旧执行"竖屏只留竖屏视频"，
-     * 这几个专版竖着拿会**永远空屏**。
-     * 不过滤的代价是竖屏时可能看到横屏视频（上下留黑边），但至少内容能出来。
-     */
-    private static boolean shouldFilterOrientation() {
-        return !com.laorendouyin.app.net.DouyinApi.isChannelEdition();
-    }
-
     private DouyinApi.FeedMode feedMode() {
         return mWantLandscape ? DouyinApi.FeedMode.LANDSCAPE : DouyinApi.FeedMode.PORTRAIT;
     }
@@ -677,13 +665,11 @@ public class FeedActivity extends UiActivity {
         // 先算后换（原子语义）：accepted 全部算妥才动列表——杜绝"清空后全被过滤=空屏"
         java.util.List<FeedVideo> accepted = new java.util.ArrayList<>();
         java.util.List<String> acceptedIds = new java.util.ArrayList<>();
-        final boolean filterOrientation = shouldFilterOrientation();
         int droppedByOrientation = 0;
         for (FeedVideo v : incoming) {
             if (keepId != null && keepId.equals(v.awemeId)) continue;   // 已手动保留在首位，别重复
             // 方向过滤：竖屏模式只留竖屏视频，横屏模式只留横屏视频
-            // （频道专版不做这一步，见 shouldFilterOrientation）
-            if (filterOrientation && !v.matchesOrientation(mWantLandscape)) {
+            if (!v.matchesOrientation(mWantLandscape)) {
                 droppedByOrientation++;
                 continue;
             }
@@ -722,7 +708,7 @@ public class FeedActivity extends UiActivity {
             int before = accepted.size();
             for (FeedVideo v : incoming) {
                 if (accepted.size() >= MIN_LIST_SIZE) break;
-                if (filterOrientation && !v.matchesOrientation(mWantLandscape)) continue;
+                if (!v.matchesOrientation(mWantLandscape)) continue;
                 boolean dup = false;
                 for (FeedVideo a : accepted) {
                     if (a.awemeId != null && a.awemeId.equals(v.awemeId)) { dup = true; break; }

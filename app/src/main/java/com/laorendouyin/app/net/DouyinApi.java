@@ -194,16 +194,44 @@ public final class DouyinApi {
     }
 
     /**
-     * 当前构建变体的**内容源频道 tag_id**；空串表示走「推荐」流。
+     * 当前构建变体的**内容源配置**，由 `app/build.gradle` 的 productFlavors 注入。
      *
-     * 由 `app/build.gradle` 的 productFlavors 注入（standard=""、channel="300219" 等）。
+     * 语法：**逗号分隔的源列表**，每个元素要么是频道 tag_id，要么是特殊值 `recommend`
+     * （表示抖音「推荐」流）。举例：
+     * ```
+     * ""                                     → 只有推荐流（standard 版）
+     * "300219"                               → 只刷三农
+     * "recommend,300219,300209,300204,300220" → 推荐流 + 三农/音乐/美食/动物 轮询（老人专版）
+     * ```
      * ⚠️ 频道不能靠推荐流的 tag_id 实现（实测无效），必须换到 channel/feed 端点 —— 见 fetchFeed。
      */
     public static final String CHANNEL_TAG_ID = com.laorendouyin.app.BuildConfig.CHANNEL_TAG_ID;
 
-    /** 当前变体是不是「频道专版」 */
+    /** 解析后的源列表（空数组 = 只有推荐流） */
+    private static final String[] SOURCES = splitSources(CHANNEL_TAG_ID);
+
+    /** 轮询游标：每次拉流换下一个源，让多源内容自然混合 */
+    private static final java.util.concurrent.atomic.AtomicInteger sSourceIdx =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+
+    private static String[] splitSources(String cfg) {
+        if (cfg == null || cfg.trim().isEmpty()) return new String[0];
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String p : cfg.split(",")) {
+            p = p.trim();
+            if (!p.isEmpty()) out.add(p);
+        }
+        return out.toArray(new String[0]);
+    }
+
+    /** 当前变体是不是「带频道的内容专版」 */
     public static boolean isChannelEdition() {
-        return CHANNEL_TAG_ID != null && !CHANNEL_TAG_ID.isEmpty();
+        return SOURCES.length > 0;
+    }
+
+    /** 该源是否走频道端点（false = 走推荐流） */
+    private static boolean isChannelSource(String src) {
+        return !"recommend".equals(src);
     }
 
     /**
@@ -218,9 +246,20 @@ public final class DouyinApi {
         ensureTtwid();
         int idx = getRefreshIndex(mode) + 1;
         mRefreshIndex.put(mode, idx);
-        String query = buildFeedQuery(count, idx, mode, signer);
-        // 内容源按变体切换：频道版走 channel/feed（并带上 tag_id），普通版走 tab/feed
-        String path = isChannelEdition() ? "/aweme/v1/web/channel/feed/" : "/aweme/v1/web/tab/feed/";
+        // 轮询取下一个内容源（空列表 = 只有推荐流）
+        String tagId = "";
+        String srcName = "推荐";
+        if (SOURCES.length > 0) {
+            final String src = SOURCES[Math.floorMod(sSourceIdx.getAndIncrement(), SOURCES.length)];
+            if (isChannelSource(src)) {
+                tagId = src;
+                srcName = "频道" + src;
+            }
+        }
+        String query = buildFeedQuery(count, idx, mode, signer, tagId);
+        String path = tagId.isEmpty() ? "/aweme/v1/web/tab/feed/" : "/aweme/v1/web/channel/feed/";
+        com.laorendouyin.app.util.AppLog.i("feed", "内容源：" + srcName
+                + (SOURCES.length > 1 ? "（共 " + SOURCES.length + " 个源轮询）" : ""));
         Request req = new Request.Builder()
                 .url("https://www.douyin.com" + path + "?" + query)
                 .header("User-Agent", UA)
@@ -243,8 +282,13 @@ public final class DouyinApi {
         return buildFeedQuery(count, 1, FeedMode.LANDSCAPE, signer);
     }
 
-    /** 构造 feed query（含 a_bogus、翻页游标与方向参数）；纯函数 */
+    /** 构造 feed query（含 a_bogus、翻页游标与方向参数）；纯函数。tagId 空串 = 推荐流 */
     public static String buildFeedQuery(int count, int refreshIndex, FeedMode mode, Signer signer) {
+        return buildFeedQuery(count, refreshIndex, mode, signer, "");
+    }
+
+    /** 构造 feed query；tagId 为频道 tag_id（空串走推荐流）。纯函数 */
+    public static String buildFeedQuery(int count, int refreshIndex, FeedMode mode, Signer signer, String tagId) {
         Map<String, String> p = baseDeviceParams(VER_COMMON_CODE, VER_COMMON_NAME);
         // 方向三件套：LinkedHashMap 里已存在这些键，put 只改值、**不动顺序**（顺序必须保持）
         p.put("device_platform", mode.devicePlatform);
@@ -253,8 +297,8 @@ public final class DouyinApi {
         p.put("round_trip_time", "500");     // feed 这个接口实测探针发的是 500，保持原值
         p.put("count", String.valueOf(count));
         p.put("refresh_index", String.valueOf(refreshIndex));
-        // 频道专版：tag_id 必须真给值（channel/feed 认它）；普通版保持空串
-        p.put("tag_id", CHANNEL_TAG_ID);
+        // 频道源必须真给 tag_id（channel/feed 认它）；推荐流保持空串
+        p.put("tag_id", tagId == null ? "" : tagId);
         StringBuilder q = new StringBuilder();
         for (Map.Entry<String, String> e : p.entrySet()) {
             if (q.length() > 0) q.append('&');
