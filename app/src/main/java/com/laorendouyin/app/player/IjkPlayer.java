@@ -308,9 +308,13 @@ public class IjkPlayer extends AbstractPlayer {
             mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", useMediaCodec);
             mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-auto-rotate", useMediaCodec);
             mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", useMediaCodec);
-            // ⚠️ 这一条**绝不能设成 1**：它表示"所有视频都走硬解"，等于把回退软解的路堵死，
-            //    在老设备上直接判死刑（之前我就是这么写的，4.4 上三个内核全灭）。
-            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-all-videos", 0);
+            // ⚠️ 这一条**按版本分**（两边的需求正好相反，实测各踩过一次）：
+            //   · **API 21+：必须为 1** —— 它表示"一律走硬解"。实测设成 0 之后 IJK 直接
+            //     在 MuMu 上播不出来（v1.6 时是 1、能播；我一度改成 0，就挂了）。
+            //   · **API < 21：必须为 0** —— 老设备硬解残缺，设 1 等于把"回退软解"的路堵死，
+            //     三个内核会一起阵亡。
+            int allVideos = (android.os.Build.VERSION.SDK_INT >= 21) ? 1 : 0;
+            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-all-videos", allVideos);
 
             // —— 起播与流畅度 ——
             // 不等缓冲攒满就开播（抖音这种短视频，等满反而更慢）

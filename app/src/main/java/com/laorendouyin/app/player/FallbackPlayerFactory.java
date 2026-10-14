@@ -31,10 +31,26 @@ public class FallbackPlayerFactory extends PlayerFactory<AbstractPlayer> {
     public static final int KERNEL_IJK = 1;
     public static final int KERNEL_SYSTEM = 2;
 
-    /** 当前内核档位（进程级） */
-    private static volatile int sLevel = KERNEL_EXO;
+    /**
+     * 当前内核档位（进程级）。
+     *
+     * ⚠️ 初值**按系统版本定**，不能一律给 KERNEL_EXO ——
+     * 光把 sExoBroken 置 true 只是"跳过 ExoPlayer"，档位记录仍停在 Exo，
+     * 结果实际用的是 IJK、日志却报"ExoPlayer → IJK 降级"，还会白白多降一级
+     * （踩过：新系统上明明直接用了 IJK，却先报一次假的 ExoPlayer 降级）。
+     */
+    private static volatile int sLevel =
+            (android.os.Build.VERSION.SDK_INT >= 21) ? KERNEL_IJK : KERNEL_EXO;
     /** 某内核被判定不可用后不再尝试 */
-    private static volatile boolean sExoBroken = false;
+    private static volatile boolean sExoBroken =
+            // ⚠️ 关键取舍（2026-10-14）：
+            //   · **API 21+（新系统）上暂时不用 ExoPlayer** —— 它在 MuMu 上实测能缓冲
+            //     （BUFFERING → PREPARED）但**始终不出画面**，集成还有问题待查；
+            //     而 IJK 在新系统上是验证过能播的，所以新系统直接走 IJK，别拿它冒险。
+            //   · **API < 21（老系统）上必须用 ExoPlayer** —— 它是唯一取流走 Java 网络栈、
+            //     能吃到我装的 Conscrypt 的内核（IJK / 系统 MediaPlayer 的 native TLS 太老连不上）。
+            // 等 ExoPlayer 的不出画面问题查清了，这里就可以放开。
+            android.os.Build.VERSION.SDK_INT >= 21;
     private static volatile boolean sIjkBroken = false;
 
     /** 运行时降级：当前内核播不出来时调用 */
@@ -72,8 +88,11 @@ public class FallbackPlayerFactory extends PlayerFactory<AbstractPlayer> {
         // ① ExoPlayer
         if (sLevel <= KERNEL_EXO && !sExoBroken) {
             try {
+                // ⚠️ **绝对不要在这里调 initPlayer()** —— DKPlayer 的 BaseVideoView 拿到实例后
+                //    自己会调一次。这里再调就会创建**两个**内部播放器：第二个把第一个覆盖掉，
+                //    而 Surface 还绑在第一个身上 → 表现是"缓冲好了（STATE_READY）却永远不出画面"。
+                //    IJK 能容忍重复初始化，ExoPlayer 不能（实测踩到：日志里连着两条 Init）。
                 AbstractPlayer p = new ExoPlayerKernel(context);
-                p.initPlayer();
                 AppLog.i("player", "本机使用 ExoPlayer 内核");
                 return p;
             } catch (Throwable t) {
@@ -86,7 +105,8 @@ public class FallbackPlayerFactory extends PlayerFactory<AbstractPlayer> {
         // ② IJK
         if (sLevel <= KERNEL_IJK && !sIjkBroken && IjkPlayer.isAvailable()) {
             try {
-                AbstractPlayer p = IjkPlayer.create(context);
+                // 同上：不要调 initPlayer()
+                AbstractPlayer p = new IjkPlayer(context);
                 AppLog.i("player", "本机使用 IJK 内核");
                 return p;
             } catch (Throwable t) {
