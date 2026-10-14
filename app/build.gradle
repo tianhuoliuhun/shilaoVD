@@ -21,13 +21,13 @@ android {
 
     defaultConfig {
         applicationId 'com.laorendouyin.app'
-        minSdk 19
+        minSdk 14
         targetSdk 36
-        // minSdk 19 必需：Android 5.0（API 20）及以下没有系统级 multidex，
+        // minSdk 14 必需：Android 5.0（API 20）及以下没有系统级 multidex，
         // 方法数超过 64K 就必须显式开启（配合 DyApp 里的 MultiDex.install）
         multiDexEnabled true
-        versionCode 5
-        versionName '1.4'
+        versionCode 6
+        versionName '1.5'
     }
 
     signingConfigs {
@@ -68,7 +68,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
-    // minSdk 19 必需：API 20 及以下要手动装 multidex
+    // minSdk 14 必需：API 20 及以下要手动装 multidex
     implementation 'androidx.multidex:multidex:2.0.1'
 
     // DKVideoPlayer（源码内嵌，Apache-2.0）：唯一的播放内核
@@ -88,7 +88,7 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.11.0'
 
     // 农历与节日：顶部信息栏要显示"今日节日"，春节/中秋这些必须查农历
-    // （纯 Java 实现，无 native、无 java.time 依赖，minSdk 19 可用）
+    // （纯 Java 实现，无 native、无 java.time 依赖，minSdk 14 可用）
     implementation 'cn.6tail:lunar:1.7.4'
 
     testImplementation 'junit:junit:4.13.2'

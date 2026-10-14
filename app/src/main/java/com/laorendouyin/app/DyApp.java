@@ -15,6 +15,29 @@ import com.laorendouyin.app.util.CrashShield;
 public class DyApp extends Application {
 
     /**
+     * 给 Android 4.4 及以下**补上 TLS 1.2**。
+     *
+     * 为什么必须有：API 20 之前的系统默认只启用 TLS 1.0/1.1，而抖音的接口和视频 CDN
+     * 都在 HTTPS 上、早已要求 TLS 1.2 —— 不补这一手，老设备上的表现就是
+     * "一直转圈、一条视频都拉不到"（而且不会有任何报错，最难查的那种）。
+     *
+     * 用的是官方推荐的做法：显式建一个 TLSv1.2 的 SSLContext 并设为 HttpsURLConnection 的默认
+     * SocketFactory。API 21+ 本来就有，直接跳过。
+     * 失败也不抛（有些 ROM 确实不带该 Provider），至少不影响其他功能。
+     */
+    private void enableTls12OnOldDevices() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) return;
+        try {
+            javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLSv1.2");
+            sc.init(null, null, null);
+            javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+            AppLog.i("app", "老系统（API " + android.os.Build.VERSION.SDK_INT + "）已启用 TLS 1.2");
+        } catch (Throwable e) {
+            AppLog.i("app", "启用 TLS 1.2 失败（系统可能不支持）: " + e);
+        }
+    }
+
+    /**
      * minSdk 19 专用：Android 5.0（API 20）及以下**没有系统级 multidex 支持**，
      * 必须在这里手动把从 dex 装进来，否则一启动就是 NoClassDefFoundError。
      * （API 21+ 由系统原生支持，这一句在那些设备上是空操作，留着不影响。）
@@ -32,6 +55,7 @@ public class DyApp extends Application {
         // 跟随系统会在浅色模式下把默认字色换成深色，配深色背景直接看不见。固定夜间。
         androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
                 androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES);
+        enableTls12OnOldDevices();
         AppLog.init(this);
         CrashShield.install(this);
         AppLog.i("app", "应用启动（myDVQ 极简版）");
