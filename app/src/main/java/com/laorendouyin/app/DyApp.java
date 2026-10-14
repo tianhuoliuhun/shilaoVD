@@ -29,7 +29,7 @@ public class DyApp extends Application {
                     new xyz.doikki.videoplayer.player.VideoViewConfig.Builder()
                             .setPlayerFactory(new com.laorendouyin.app.player.FallbackPlayerFactory())
                             .build());
-            AppLog.i("app", "播放内核工厂已安装（IJK 优先 / 系统 MediaPlayer 兜底）");
+            AppLog.i("app", "播放内核工厂已安装（新系统用系统内核 / 老系统 IJK 优先）");
         } catch (Throwable t) {
             AppLog.i("app", "安装播放内核工厂失败，将使用默认内核: " + t);
         }

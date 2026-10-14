@@ -11,7 +11,13 @@ import xyz.doikki.videoplayer.player.PlayerFactory;
 /**
  * 播放内核工厂：**IJK →（仅老系统）ExoPlayer → 系统 MediaPlayer**，依次兜底。
  *
- * ⚠️ 2026-10-14 起播优化：**IJK 提到第一位（两个系统都一样）**。
+ * 🔴 **内核顺序按系统版本分开**（2026-10-14 真机闪退后定稿）：
+ *    · **API 21+（新系统）**：**只用系统 MediaPlayer**（IJK 禁用）—— IJK 的
+ *      `av_application_on_http_event` 在真机上必崩（tombstone 取证，见 sIjkBroken）；
+ *    · **API < 21（老系统）**：**IJK 优先** —— 那边的系统解码器解不了 High Profile，
+ *      IJK 是唯一活路。
+ *
+ * ⚠️ 2026-10-14 起播优化：老系统上 IJK 提到第一位。
  *    原来老系统是 ExoPlayer 优先，但它在 4.4 上**首条要白等 11.2 秒**才失败
  *    （4.4 的系统解码器连 H.264 High Profile 都不支持，ExoPlayer 走 MediaCodec 必挂），
  *    而 IJK 走本地代理后是验证过能播的、后续条起播只要 60~130ms。
@@ -45,7 +51,8 @@ public class FallbackPlayerFactory extends PlayerFactory<AbstractPlayer> {
      * 结果实际用的是 IJK、日志却报"ExoPlayer → IJK 降级"，还会白白多降一级
      * （踩过：新系统上明明直接用了 IJK，却先报一次假的 ExoPlayer 降级）。
      */
-    private static volatile int sLevel = KERNEL_IJK;
+    private static volatile int sLevel =
+            (android.os.Build.VERSION.SDK_INT >= 21) ? KERNEL_SYSTEM : KERNEL_IJK;
     /** 某内核被判定不可用后不再尝试 */
     private static volatile boolean sExoBroken =
             // ⚠️ 关键取舍（2026-10-14）：
@@ -57,7 +64,27 @@ public class FallbackPlayerFactory extends PlayerFactory<AbstractPlayer> {
             //     白等 11.2s），所以只在 IJK 也失败之后才轮得到它。
             // 等 ExoPlayer 的不出画面问题查清了，这里就可以放开。
             android.os.Build.VERSION.SDK_INT >= 21;
-    private static volatile boolean sIjkBroken = false;
+    private static volatile boolean sIjkBroken =
+            // 🔴 新系统（API 21+）**禁用 IJK**（2026-10-14 真机闪退取证）：
+            //
+            // 真机（Redmi / HyperOS / Android 15 / arm64）上连崩数次，tombstone 指向同一处：
+            // ```
+            //   tid 3418, name: ff_read                       ← IJK 的读线程
+            //   signal 7 (SIGBUS) / 11 (SIGSEGV)，PC 跳到垃圾地址
+            //   #01  libijkffmpeg.so (av_application_on_http_event+24)
+            // ```
+            // 即 IJK 的 `ijkavapplication` 模块在处理 **HTTP 事件回调**时访问了失效指针。
+            //
+            // 而我们的用法必然触发它：**IJK 的 FFmpeg 没有编译 https**，所以所有播放都要
+            // 走本地代理（`http://127.0.0.1:port/https%3A%2F%2F...`），每次 HTTP 事件都会
+            // 回调进这个函数。
+            //
+            // 新系统上系统 MediaPlayer 完全够用（抖音的流是标准 MP4 / H.264-HEVC，
+            // 真机还有完整硬解），没有理由为 IJK 的容器兼容性去冒 native 崩溃的风险。
+            //
+            // ⚠️ 老系统（API<21）**不能**跟着禁：那边的系统解码器解不了 H.264 High Profile，
+            //    IJK 是唯一的活路（见本文件其它注释）。
+            android.os.Build.VERSION.SDK_INT >= 21;
 
     /** 运行时降级：当前内核播不出来时调用 */
     public static void fallbackToNext(String why) {
