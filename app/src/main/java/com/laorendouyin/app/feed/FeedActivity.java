@@ -72,6 +72,21 @@ public class FeedActivity extends UiActivity {
      */
     private String mPlayingAwemeId = "";
 
+    /** 当前播放的**原始地址**（不带代理前缀）—— 要降级直连时用它重播 */
+    private String mPlayingRawUrl = "";
+
+    /**
+     * 当前这一条是不是走的**代理地址**（= 命中了缓存）。
+     * 只有走代理的才有"降级"一说：直连都播不出来，那就是内容本身的问题了。
+     */
+    private boolean mPlayingViaProxy;
+
+    /**
+     * 本条是否已经降级重播过一次。
+     * 必须有这个闸门：直连再失败还会触发降级，没有上限就是死循环重播。
+     */
+    private boolean mProxyFallbackTried;
+
     /**
      * 连续多少页"被过滤掉、一条都没留下"。
      * 过滤有两个来源：看过的（SeenStore）、方向不对的（竖屏模式下的横屏视频等）。
@@ -161,13 +176,30 @@ public class FeedActivity extends UiActivity {
             //    反过来的话，ViewPager 会拿"旧数据 + 新位置"去算滚动，数据一变就对不上 ——
             //    这是"横竖屏切换闪退"的另一半原因。
             mAdapter.notifyDataSetChanged();
-            mViewPager.setCurrentItem(0, false);
+            // ⚠️ 延后一帧再定位：notifyDataSetChanged 之后 ViewPager 得先消化新数据，
+            //    同一帧内立刻 setCurrentItem 会被判成"改了数据却没通知"而抛 IllegalStateException
+            //    （v1.1 的转屏闪退就是这个，dropbox 里的堆栈直指这一行）。
+            mViewPager.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (!isFinishing() && !isDestroyed()) {
+                        mViewPager.setCurrentItem(0, false);
+                    }
+                }
+            });
             // 重新挂载（转屏会让 item 重新布局；startPlay 会识别出"同一个视频"而只搬视图）
             startPlay(0);
             clearHint();
         } else {
             mAdapter.notifyDataSetChanged();
-            mViewPager.setCurrentItem(0, false);
+            mViewPager.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (!isFinishing() && !isDestroyed()) {
+                        mViewPager.setCurrentItem(0, false);
+                    }
+                }
+            });
             com.laorendouyin.app.ui.Loading.show(this, true);
         }
         loadMore(true);
@@ -335,8 +367,38 @@ public class FeedActivity extends UiActivity {
             @Override
             public void onPlayStateChanged(int playState) {
                 com.laorendouyin.app.util.AppLog.i("feed", "播放状态: " + playerStateName(playState));
+                // 播不出来时，如果这一条走的是代理 → 降级直连（见 fallbackToDirectPlay）
+                if (playState == VideoView.STATE_ERROR) {
+                    fallbackToDirectPlay();
+                }
             }
         });
+    }
+
+    /**
+     * 播放失败的兜底降级（缓存链路的最后一层）。
+     *
+     * 触发条件：**这一条本来走的是代理**，且**还没降级过**。
+     * 做法：删掉这条的缓存（既然播不出来，它就是坏的）、改用直连原始地址重播一次。
+     *
+     * 为什么必须有这一层：代理地址是本机 127.0.0.1 上的一个小服务，失败模式很多 ——
+     * 缓存写到一半断了、源站拒绝续传、端口被系统回收、磁盘写满…… 这些都不是内容的问题，
+     * 直连大概率能播。没有这一层，用户看到的就是"这个视频打不开"。
+     *
+     * ⚠️ 只降级一次：直连还失败就说明确实是内容/网络的问题，再试只会陷入死循环重播。
+     */
+    private void fallbackToDirectPlay() {
+        if (!mPlayingViaProxy || mProxyFallbackTried || mPlayingRawUrl.isEmpty()) return;
+        mProxyFallbackTried = true;
+        com.laorendouyin.app.util.AppLog.i("feed", "代理播放失败 → 删掉坏缓存，改用直连重播");
+        com.laorendouyin.app.cache.ProxyVideoCacheManager.evict(this, mPlayingRawUrl);
+        try {
+            mVideoView.release();
+            mVideoView.setUrl(mPlayingRawUrl);
+            mVideoView.start();
+        } catch (Throwable e) {
+            com.laorendouyin.app.util.AppLog.i("feed", "降级重播失败：" + e);
+        }
     }
 
     private static String playerStateName(int s) {
@@ -453,7 +515,11 @@ public class FeedActivity extends UiActivity {
                     // 给「看过」留一份可读记录（去重账本只存 id，显示要标题和封面）
                     HistoryStore.mark(this, video.awemeId, video.title, video.coverUrl);
                 }
+                // 记录"这一条是怎么播的"：播放失败时据此决定要不要降级
                 String playUrl = mPreloadManager.getPlayUrl(video.playUrl);
+                mPlayingRawUrl = video.playUrl;
+                mPlayingViaProxy = !playUrl.equals(video.playUrl);
+                mProxyFallbackTried = false;
                 mVideoView.setUrl(playUrl, DouyinApi.playHeaders());
                 mController.addControlComponent(viewHolder.mTikTokView, true);
                 viewHolder.mPlayerContainer.addView(mVideoView, 0);

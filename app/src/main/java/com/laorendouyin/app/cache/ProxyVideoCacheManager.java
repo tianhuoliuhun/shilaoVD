@@ -5,10 +5,18 @@ import android.content.Context;
 import com.danikula.videocache.HttpProxyCacheServer;
 import com.danikula.videocache.headers.HeaderInjector;
 import com.laorendouyin.app.net.DouyinApi;
+import com.laorendouyin.app.util.AppLog;
 
 import java.io.File;
 import java.util.Map;
 
+/**
+ * 视频缓存的代理服务（AndroidVideoCache）。
+ *
+ * 除了构造代理，这里还承担**降级开关**的职责（2026-10-14 新增）：
+ * 一旦发现代理不可用（构造失败 / 播放时被判定有问题），就置 {@code sProxyBroken}，
+ * 之后所有播放一律直连原始地址 —— 宁可没有缓存加速，也不能因为"代理坏了"而播不出来。
+ */
 public class ProxyVideoCacheManager {
 
     /**
@@ -26,11 +34,48 @@ public class ProxyVideoCacheManager {
 
     private static HttpProxyCacheServer sharedProxy;
 
+    /**
+     * 代理是否已被判定为不可用。
+     *
+     * 置位后**不再回头**（进程内）：代理服务要么一开始就起不来，要么在播放中被发现有问题，
+     * 两种情况都不适合"再试一次"—— 反复在代理上跌倒只会让用户看到反复的播放失败。
+     * 用户下次冷启动会重新尝试。
+     */
+    private static volatile boolean sProxyBroken = false;
+
     private ProxyVideoCacheManager() {
     }
 
+    /** 代理现在还能用吗？调用方据此决定走代理还是直连 */
+    public static boolean isProxyUsable() {
+        return !sProxyBroken && sharedProxy != null;
+    }
+
+    /** 判定代理不可用 → 之后全程直连（首次置位时落一条日志，方便取证） */
+    public static void markProxyBroken(String why) {
+        if (!sProxyBroken) {
+            sProxyBroken = true;
+            AppLog.i("cache", "代理判定不可用，后续全部走直连：" + why);
+        }
+    }
+
     public static HttpProxyCacheServer getProxy(Context context) {
-        return sharedProxy == null ? (sharedProxy = newProxy(context)) : sharedProxy;
+        if (sProxyBroken) return null;
+        if (sharedProxy == null) {
+            synchronized (ProxyVideoCacheManager.class) {
+                if (sharedProxy == null && !sProxyBroken) {
+                    try {
+                        sharedProxy = newProxy(context);
+                    } catch (Throwable e) {
+                        // 构造失败（端口被占、缓存目录建不了…）→ 直接判定不可用，
+                        // 而不是把异常抛给上层让 App 崩掉
+                        markProxyBroken("构造失败: " + e.getClass().getSimpleName() + " " + e.getMessage());
+                        return null;
+                    }
+                }
+            }
+        }
+        return sharedProxy;
     }
 
     private static HttpProxyCacheServer newProxy(Context context) {
@@ -49,6 +94,31 @@ public class ProxyVideoCacheManager {
                 .build();
     }
 
+    /**
+     * 把某条视频的缓存（正式文件 + 下载中的临时文件）删掉。
+     *
+     * 用在**播放失败后的降级**里：既然用这条缓存播不出来，就说明它是坏的（写到一半断了、
+     * 或者源站已经拒了），留着只会让下次又踩同一个坑 —— 删掉，并改直连重播。
+     */
+    public static void evict(Context context, String rawUrl) {
+        if (rawUrl == null || rawUrl.isEmpty()) return;
+        try {
+            HttpProxyCacheServer proxy = getProxy(context);
+            if (proxy == null) return;
+            File finalFile = proxy.getCacheFile(rawUrl);
+            if (finalFile != null && finalFile.exists() && finalFile.delete()) {
+                AppLog.i("cache", "已清除坏缓存 " + finalFile.getName());
+            }
+            File tempFile = proxy.getTempCacheFile(rawUrl);
+            if (tempFile != null && tempFile.exists() && tempFile.delete()) {
+                AppLog.i("cache", "已清除坏临时缓存 " + tempFile.getName());
+            }
+        } catch (Throwable e) {
+            // 清理失败不影响主流程（最坏就是脏缓存留着）
+            AppLog.i("cache", "清坏缓存失败：" + e);
+        }
+    }
+
     /** 人类可读容量（设置页那行用；手表上看到"128.0 MB"比"134217728"有用） */
     public static String formatSize(long bytes) {
         if (bytes < 0) return "0 MB";
@@ -60,7 +130,9 @@ public class ProxyVideoCacheManager {
     /** 当前视频缓存占用（字节）。库里没有这个 API，只能自己遍历缓存目录求和 */
     public static long cacheSize(Context context) {
         try {
-            File[] files = getProxy(context).getCacheRoot().listFiles();
+            HttpProxyCacheServer proxy = getProxy(context);
+            if (proxy == null) return 0;
+            File[] files = proxy.getCacheRoot().listFiles();
             if (files == null) return 0;
             long total = 0;
             for (File f : files) {
@@ -89,7 +161,9 @@ public class ProxyVideoCacheManager {
      */
     public static boolean clearAllCache(Context context) {
         try {
-            File root = getProxy(context).getCacheRoot();
+            HttpProxyCacheServer proxy = getProxy(context);
+            if (proxy == null) return true;
+            File root = proxy.getCacheRoot();
             File[] files = root.listFiles();
             if (files == null) return true;
             boolean allOk = true;

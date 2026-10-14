@@ -3,6 +3,7 @@ package com.laorendouyin.app.cache;
 import android.content.Context;
 
 import com.danikula.videocache.HttpProxyCacheServer;
+import com.laorendouyin.app.util.AppLog;
 
 import java.io.File;
 import java.util.Iterator;
@@ -14,7 +15,14 @@ import java.util.concurrent.Executors;
 import xyz.doikki.videoplayer.util.L;
 
 /**
- * 抖音预加载工具，使用AndroidVideoCache实现
+ * 抖音预加载工具，使用 AndroidVideoCache 实现。
+ *
+ * 2026-10-14 补上的**降级链路**（用户要求"缓存失败时的降级方案"）：
+ * 播一条视频有三条路，按优先级依次尝试，任何一条走不通就退到下一层 ——
+ *   ① 走代理（命中缓存，起播最快）
+ *   ② 直连原始地址（没有缓存加速，但能播）
+ *   ③ 播放中代理失效 → 由宿主把"直连重播"接住（见 FeedActivity 的错误降级）
+ * 这一层的职责是①②，以及把"代理已经不可用"这个事实传播出去。
  */
 public class PreloadManager {
 
@@ -44,12 +52,27 @@ public class PreloadManager {
      */
     private boolean mHostPaused;
 
+    /** 可能为 null（代理构造失败时）—— 所有使用点都必须判空 */
     private final HttpProxyCacheServer mHttpProxyCacheServer;
 
     /**
-     * 预加载的大小，每个视频预加载1M，这个参数可根据实际情况调整
+     * 预加载的读取目标：每个视频预加载 1M，这个参数可根据实际情况调整
      */
     public static final int PRELOAD_LENGTH = 1024 * 1024;
+
+    /**
+     * 走代理播放的最低门槛（2026-10-14 新增）。
+     *
+     * 原来只有一个判据（1MB），于是出现这种浪费：预加载刚下到 900KB 时用户正好滑到这条，
+     * isPreloaded() 返回 false → 直连原始地址 → **已经下好的 900KB 白费**，
+     * 而且这一路完全没有缓存加速。
+     *
+     * 现在把两件事拆开：
+     *   - "还要不要继续预加载" → 看 {@link #PRELOAD_LENGTH}（1MB）
+     *   - "能不能走代理播放"   → 看这里（256KB），代理会从已有数据接着往下供流
+     * 256KB 对 720p 大约够播两三秒，起播够用，剩下的边播边下。
+     */
+    public static final int READY_LENGTH = 256 * 1024;
 
     private PreloadManager(Context context) {
         mHttpProxyCacheServer = ProxyVideoCacheManager.getProxy(context);
@@ -72,6 +95,8 @@ public class PreloadManager {
      * @param rawUrl 原始视频地址
      */
     public void addPreloadTask(String rawUrl, int position) {
+        // 代理不可用时连预加载都不做：没有缓存通道，预加载毫无意义（只会白耗流量）
+        if (mHttpProxyCacheServer == null || !ProxyVideoCacheManager.isProxyUsable()) return;
         if (isPreloaded(rawUrl)) return;
         PreloadTask task = new PreloadTask();
         task.mRawUrl = rawUrl;
@@ -87,9 +112,24 @@ public class PreloadManager {
     }
 
     /**
-     * 判断该播放地址是否已经预加载
+     * 该地址是否**已经预加载到位**（用于判断"还要不要再下"）。
      */
     private boolean isPreloaded(String rawUrl) {
+        if (mHttpProxyCacheServer == null) return false;
+        int need = PRELOAD_LENGTH;
+        return existsAtLeast(rawUrl, need);
+    }
+
+    /**
+     * 该地址**能不能直接走代理播放**（门槛比预加载低，见 {@link #READY_LENGTH}）。
+     */
+    private boolean isReadyForPlayback(String rawUrl) {
+        if (mHttpProxyCacheServer == null) return false;
+        return existsAtLeast(rawUrl, READY_LENGTH);
+    }
+
+    /** 缓存（正式文件或临时文件）是否已经攒够 need 字节 */
+    private boolean existsAtLeast(String rawUrl, int need) {
         //先判断是否有缓存文件，如果已经存在缓存文件，并且其大小大于1KB，则表示已经预加载完成了
         File cacheFile = mHttpProxyCacheServer.getCacheFile(rawUrl);
         if (cacheFile.exists()) {
@@ -98,15 +138,13 @@ public class PreloadManager {
             } else {
                 //这种情况一般是缓存出错，把缓存删掉，重新缓存
                 cacheFile.delete();
-                return false;
             }
         }
-        //再判断是否有临时缓存文件，如果已经存在临时缓存文件，并且临时缓存文件超过了预加载大小，则表示已经预加载完成了
+        //再判断是否有临时缓存文件（下载中的）
         File tempCacheFile = mHttpProxyCacheServer.getTempCacheFile(rawUrl);
         if (tempCacheFile.exists()) {
-            return tempCacheFile.length() >= PRELOAD_LENGTH;
+            return tempCacheFile.length() >= need;
         }
-
         return false;
     }
 
@@ -210,6 +248,7 @@ public class PreloadManager {
     public void resumeAll() {
         mHostPaused = false;
         mIsStartPreload = true;
+        if (mHttpProxyCacheServer == null || !ProxyVideoCacheManager.isProxyUsable()) return;
         for (Map.Entry<String, PreloadTask> next : mPreloadTasks.entrySet()) {
             PreloadTask task = next.getValue();
             if (!isPreloaded(task.mRawUrl)) task.executeOn(mExecutorService);
@@ -217,16 +256,33 @@ public class PreloadManager {
     }
 
     /**
-     * 获取播放地址
+     * 取这条视频实际该用的播放地址 —— **降级链路的入口**。
+     *
+     * 依次判断：
+     *   ① 代理已被判定不可用 → 直连；
+     *   ② 缓存还没攒到可播门槛（256KB）→ 直连（别为了等缓存把用户晾着）；
+     *   ③ 都 OK → 返回代理地址（命中缓存，起播最快）；
+     *   ④ 连"取代理地址"这一步都抛异常 → 判定代理不可用，本次直连（并记日志取证）。
+     *
+     * 这一层保证的是"**播放永远不会因为缓存层的问题而失败**"—— 最差也有直连兜底。
      */
     public String getPlayUrl(String rawUrl) {
         PreloadTask task = mPreloadTasks.get(rawUrl);
         if (task != null) {
             task.cancel();
         }
-        if (isPreloaded(rawUrl)) {
+        if (mHttpProxyCacheServer == null || !ProxyVideoCacheManager.isProxyUsable()) {
+            return rawUrl;
+        }
+        if (!isReadyForPlayback(rawUrl)) {
+            AppLog.i("cache", "缓存未达可播门槛（<256KB），本条直连");
+            return rawUrl;
+        }
+        try {
             return mHttpProxyCacheServer.getProxyUrl(rawUrl);
-        } else {
+        } catch (Throwable e) {
+            ProxyVideoCacheManager.markProxyBroken("取代理地址失败: "
+                    + e.getClass().getSimpleName() + " " + e.getMessage());
             return rawUrl;
         }
     }
