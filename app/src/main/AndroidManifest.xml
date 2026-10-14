@@ -9,7 +9,19 @@
   ⚠️ 原基座**没有显式声明 INTERNET 权限**（靠依赖库的清单合并进来的）。本项目显式声明，
   不依赖合并运气 —— 少了它，所有网络请求都会直接抛 SecurityException。
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      IJK（ijkplayer）的 aar 在打包时被统一声明成了 minSdk 21，但它们里面装的是 **native so**：
+      64 位的 so 本来也只会在 API 21+ 的设备上被加载，Android 4 用的是 armeabi-v7a 那一条，
+      并不受这个声明约束。用 overrideLibrary 放行合并检查（不然整个工程只能停在 21）。
+
+      ⚠️ 真正决定"某台机器能不能用 IJK"的是 so 能不能加载成功 —— 这件事在
+         IjkPlayer.isAvailable() 里用 try-catch 探着，失败会自动退到系统 MediaPlayer 内核，
+         不会闪退（架构不匹配抛的是 UnsatisfiedLinkError，属 Error 不属 Exception，漏了就崩）。
+    -->
+    <uses-sdk tools:overrideLibrary="tv.danmaku.ijk.media.player_armv7a,tv.danmaku.ijk.media.player_arm64,tv.danmaku.ijk.media.player_x86,tv.danmaku.ijk.media.player_x86_64,tv.danmaku.ijk.media.player" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

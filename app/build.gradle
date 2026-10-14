@@ -26,8 +26,8 @@ android {
         // minSdk 14 必需：Android 5.0（API 20）及以下没有系统级 multidex，
         // 方法数超过 64K 就必须显式开启（配合 DyApp 里的 MultiDex.install）
         multiDexEnabled true
-        versionCode 6
-        versionName '1.5'
+        versionCode 7
+        versionName '1.6'
     }
 
     signingConfigs {
@@ -86,6 +86,17 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:3.12.13'
     // JSON 解析（纯 Java 可单测）
     implementation 'com.google.code.gson:gson:2.11.0'
+
+    // 播放内核：IJK（B 站 ijkplayer，底层 FFmpeg）
+    // 为什么加：老设备（尤其 Android 4.x）上系统 MediaPlayer 对容器/编码挑得厉害 ——
+    // 同一个视频新手机能放、老人那台老机器就是黑屏。IJK 软硬解通吃，是"让安卓 4 跑起来"的关键牌。
+    // ⚠️ 它带 native so → 本项目从此**不再是纯 Java**，APK 里开始有 lib/ 目录，也就有了 ABI 之分。
+    //    必须带上 armeabi-v7a（Android 4 的绝对主力），否则老设备装了也播不了。
+    implementation 'tv.danmaku.ijk.media:ijkplayer-java:0.8.8'
+    implementation 'tv.danmaku.ijk.media:ijkplayer-armv7a:0.8.8'
+    implementation 'tv.danmaku.ijk.media:ijkplayer-arm64:0.8.8'
+    implementation 'tv.danmaku.ijk.media:ijkplayer-x86:0.8.8'
+    implementation 'tv.danmaku.ijk.media:ijkplayer-x86_64:0.8.8'
 
     // 农历与节日：顶部信息栏要显示"今日节日"，春节/中秋这些必须查农历
     // （纯 Java 实现，无 native、无 java.time 依赖，minSdk 14 可用）

@@ -88,6 +88,13 @@ public class FeedActivity extends UiActivity {
     private boolean mProxyFallbackTried;
 
     /**
+     * 本条是否已经"换内核重试"过。
+     * 换内核是重操作（要重建整个 VideoView），而且一旦换就全局有效，
+     * 所以每条视频只做一次。
+     */
+    private boolean mKernelFallbackTried;
+
+    /**
      * 连续多少页"被过滤掉、一条都没留下"。
      * 过滤有两个来源：看过的（SeenStore）、方向不对的（竖屏模式下的横屏视频等）。
      * 没有上限的话，服务端要是持续返回同一种，就是"转圈不停 + 静默无限翻页"。
@@ -347,18 +354,28 @@ public class FeedActivity extends UiActivity {
     }
 
     private void initVideoView() {
-        mVideoView = new VideoView(this);
-        mVideoView.setLooping(true);
+        mVideoView = createVideoView();
+    }
+
+    /**
+     * 建一个播放器实例（含状态监听与控制器）。
+     *
+     * 单独抽出来是因为**换播放内核时必须重建 VideoView** —— 它的播放器是构造时
+     * 从 PlayerFactory 取的，改不了。
+     */
+    private VideoView createVideoView() {
+        VideoView vv = new VideoView(this);
+        vv.setLooping(true);
         // 竖屏视频居中裁剪、横屏默认显示（demo 的 TikTokRenderView 行为）
-        mVideoView.setRenderViewFactory(TikTokRenderViewFactory.create());
+        vv.setRenderViewFactory(TikTokRenderViewFactory.create());
         mController = new TikTokController(this);
-        mVideoView.setVideoController(mController);
+        vv.setVideoController(mController);
         // 锁死"不跟随设备传感器转屏"：本项目转屏由**屏幕方向 → 换流**来做，
         // 不允许播放器自己把画面转成横屏（那会绕过上面的分流逻辑）。
         mController.setEnableOrientation(false);
 
         // 播放器状态全量落日志（真机教训：拉流失败被静默吞掉=只显封面，无日志根本查不出）
-        mVideoView.addOnStateChangeListener(new VideoView.OnStateChangeListener() {
+        vv.addOnStateChangeListener(new VideoView.OnStateChangeListener() {
             @Override
             public void onPlayerStateChanged(int playerState) {
                 com.laorendouyin.app.util.AppLog.i("feed", "播放器状态: " + playerStateName(playerState));
@@ -369,10 +386,16 @@ public class FeedActivity extends UiActivity {
                 com.laorendouyin.app.util.AppLog.i("feed", "播放状态: " + playerStateName(playState));
                 // 播不出来时，如果这一条走的是代理 → 降级直连（见 fallbackToDirectPlay）
                 if (playState == VideoView.STATE_ERROR) {
-                    fallbackToDirectPlay();
+                    // 两层降级依次试：
+                    //   ① 走了代理却播不出来 → 删坏缓存改直连
+                    //   ② 直连也播不出来（或本来就是直连）→ 换播放内核（IJK → 系统）
+                    if (!fallbackToDirectPlay()) {
+                        fallbackToSystemKernel();
+                    }
                 }
             }
         });
+        return vv;
     }
 
     /**
@@ -387,8 +410,8 @@ public class FeedActivity extends UiActivity {
      *
      * ⚠️ 只降级一次：直连还失败就说明确实是内容/网络的问题，再试只会陷入死循环重播。
      */
-    private void fallbackToDirectPlay() {
-        if (!mPlayingViaProxy || mProxyFallbackTried || mPlayingRawUrl.isEmpty()) return;
+    private boolean fallbackToDirectPlay() {
+        if (!mPlayingViaProxy || mProxyFallbackTried || mPlayingRawUrl.isEmpty()) return false;
         mProxyFallbackTried = true;
         com.laorendouyin.app.util.AppLog.i("feed", "代理播放失败 → 删掉坏缓存，改用直连重播");
         com.laorendouyin.app.cache.ProxyVideoCacheManager.evict(this, mPlayingRawUrl);
@@ -398,6 +421,50 @@ public class FeedActivity extends UiActivity {
             mVideoView.start();
         } catch (Throwable e) {
             com.laorendouyin.app.util.AppLog.i("feed", "降级重播失败：" + e);
+        }
+        return true;
+    }
+
+    /**
+     * 第二层兜底：**换播放内核重放**（IJK 播不出来 → 系统 MediaPlayer）。
+     *
+     * 实测触发场景：IJK 加载成功、绝大多数视频也能播，但个别会报
+     * `IJK 播放出错 what=-10000` → 整条视频打不开。这类情况换系统内核往往就好了
+     * —— 两个内核的解码路径完全不同，正好互补。
+     *
+     * 实现要点：VideoView 的播放器是**构造时**从工厂取的，所以换内核必须重建它。
+     * 换完只把当前这条重放一遍，不打断用户其他操作。
+     */
+    private void fallbackToSystemKernel() {
+        if (mKernelFallbackTried || mPlayingRawUrl.isEmpty()) return;
+        // 已经是系统内核（IJK 压根没装上）就没什么可换的了
+        if (com.laorendouyin.app.player.FallbackPlayerFactory.isSystemForced()) return;
+        mKernelFallbackTried = true;
+        com.laorendouyin.app.util.AppLog.i("feed", "当前内核播不出来 → 换成系统内核重放");
+        com.laorendouyin.app.player.FallbackPlayerFactory.forceSystemKernel("播放出错");
+
+        try {
+            // 记住播放器挂在哪个容器里
+            android.view.ViewGroup container = null;
+            if (mVideoView.getParent() instanceof android.view.ViewGroup) {
+                container = (android.view.ViewGroup) mVideoView.getParent();
+                container.removeView(mVideoView);
+            }
+            mVideoView.release();
+
+            // 用新内核重建
+            mVideoView = createVideoView();
+            if (container != null) {
+                container.addView(mVideoView, 0);
+                mVideoView.setUrl(mPlayingRawUrl, com.laorendouyin.app.net.DouyinApi.playHeaders());
+                mVideoView.start();
+                com.laorendouyin.app.util.AppLog.i("feed", "已用系统内核重放当前视频");
+            } else {
+                // 容器没了（页面被回收过）→ 走常规挂载流程
+                startPlay(mCurPos);
+            }
+        } catch (Throwable e) {
+            com.laorendouyin.app.util.AppLog.i("feed", "换内核重放失败：" + e);
         }
     }
 
@@ -615,6 +682,32 @@ public class FeedActivity extends UiActivity {
             com.laorendouyin.app.util.AppLog.i("feed", "方向过滤：丢掉 " + droppedByOrientation + " 条"
                     + (mWantLandscape ? "非横屏" : "非竖屏") + "视频");
         }
+        // ---- 保底：列表太短就把"看过的"放回来（2026-10-14）----
+        //
+        // 实测事故：SeenStore 记满 1200 条之后，抖音推来的 6 条里有 5 条被判"看过"，
+        // 列表只剩 1 条 → ViewPager 无从滑动 → 用户直接看到"划不动了"。
+        //
+        // 权衡很清楚：**"偶尔看到几条重复的" 远好于 "划不动"** ——
+        // 对老人来说后者等于"这个 App 坏了"。所以这里设一道下限，
+        // 不足就从这一批里把看过的补回来（方向过滤仍然照守，不混进反方向的视频）。
+        final int MIN_LIST_SIZE = 5;
+        if (accepted.size() < MIN_LIST_SIZE) {
+            int before = accepted.size();
+            for (FeedVideo v : incoming) {
+                if (accepted.size() >= MIN_LIST_SIZE) break;
+                if (!v.matchesOrientation(mWantLandscape)) continue;
+                boolean dup = false;
+                for (FeedVideo a : accepted) {
+                    if (a.awemeId != null && a.awemeId.equals(v.awemeId)) { dup = true; break; }
+                }
+                if (!dup) accepted.add(v);
+            }
+            if (accepted.size() > before) {
+                com.laorendouyin.app.util.AppLog.i("feed", "新内容不足，补放 "
+                        + (accepted.size() - before) + " 条看过的，避免列表过短划不动");
+            }
+        }
+
         if (replace && accepted.isEmpty() && keep == null) {
             // 整批都不合适且没有要保活的视频 → 保持现状不空屏，交由调用方补拉
             com.laorendouyin.app.util.AppLog.i("feed", "整批都不合适，保持现状待补拉");

@@ -15,6 +15,27 @@ import com.laorendouyin.app.util.CrashShield;
 public class DyApp extends Application {
 
     /**
+     * 安装播放内核工厂：**IJK 优先，系统 MediaPlayer 兜底**。
+     *
+     * 必须在任何 VideoView 创建之前执行（VideoView 在构造时就从工厂取播放器）。
+     * 两级兜底怎么分工，见 {@link com.laorendouyin.app.player.FallbackPlayerFactory}。
+     *
+     * 为什么这件事对"让安卓 4 跑起来"很关键：老机器上系统 MediaPlayer 对容器和编码挑得厉害，
+     * 同一批视频新手机能放、它就不行。IJK 底层是 FFmpeg，软硬解通吃，是老设备上更稳的那张牌。
+     */
+    private void installPlayerKernel() {
+        try {
+            xyz.doikki.videoplayer.player.VideoViewManager.setConfig(
+                    new xyz.doikki.videoplayer.player.VideoViewConfig.Builder()
+                            .setPlayerFactory(new com.laorendouyin.app.player.FallbackPlayerFactory())
+                            .build());
+            AppLog.i("app", "播放内核工厂已安装（IJK 优先 / 系统 MediaPlayer 兜底）");
+        } catch (Throwable t) {
+            AppLog.i("app", "安装播放内核工厂失败，将使用默认内核: " + t);
+        }
+    }
+
+    /**
      * 给 Android 4.4 及以下**补上 TLS 1.2**。
      *
      * 为什么必须有：API 20 之前的系统默认只启用 TLS 1.0/1.1，而抖音的接口和视频 CDN
@@ -58,6 +79,7 @@ public class DyApp extends Application {
         enableTls12OnOldDevices();
         AppLog.init(this);
         CrashShield.install(this);
+        installPlayerKernel();
         AppLog.i("app", "应用启动（myDVQ 极简版）");
     }
 }
