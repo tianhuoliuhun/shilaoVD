@@ -334,7 +334,10 @@ public class IjkPlayer extends AbstractPlayer {
             // —— 网络：抖音 CDN 偶尔抽风，给足超时并允许重连 ——
             mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 15000000L);   // 微秒
             mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1);
-            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "http-detect-range-support", 1);
+            // ⚠️ 原来这里还有 `http-detect-range-support`，但 IJK 0.8.8 里**没有这个选项** ——
+            //    每次 prepare 的 native 日志都在抱怨 `Option http-detect-range-support not found.`，已删。
+            // 缓冲上限（默认 15MB）调大一档：网络抖动时更不容易卡顿（起播不受影响）。
+            mMediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max-buffer-size", 30 * 1024 * 1024);
         } catch (Throwable t) {
             AppLog.i("player", "IJK 设置选项失败（不影响播放）: " + t);
         }

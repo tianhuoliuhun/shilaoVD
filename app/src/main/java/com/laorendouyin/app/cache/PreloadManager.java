@@ -286,10 +286,10 @@ public class PreloadManager {
     }
 
     public String getPlayUrl(String rawUrl) {
-        PreloadTask task = mPreloadTasks.get(rawUrl);
-        if (task != null) {
-            task.cancel();
-        }
+        // ⚠️ 这里**故意不再取消**该条的预加载任务（2026-10-14 起播优化）：
+        //    预加载读的就是同一个代理地址、写的是同一份缓存文件，取消它等于把
+        //    已经在下（实测取消时只读到 8191B）的连接提前掐断，播放器起播时
+        //    又得从零等首字节。让它把余量下完，起播时代理手上就有更多数据。
         if (mHttpProxyCacheServer == null || !ProxyVideoCacheManager.isProxyUsable()) {
             return rawUrl;
         }

@@ -9,7 +9,13 @@ import xyz.doikki.videoplayer.player.AndroidMediaPlayer;
 import xyz.doikki.videoplayer.player.PlayerFactory;
 
 /**
- * 播放内核工厂：**ExoPlayer → IJK → 系统 MediaPlayer**，三级依次兜底。
+ * 播放内核工厂：**IJK →（仅老系统）ExoPlayer → 系统 MediaPlayer**，依次兜底。
+ *
+ * ⚠️ 2026-10-14 起播优化：**IJK 提到第一位（两个系统都一样）**。
+ *    原来老系统是 ExoPlayer 优先，但它在 4.4 上**首条要白等 11.2 秒**才失败
+ *    （4.4 的系统解码器连 H.264 High Profile 都不支持，ExoPlayer 走 MediaCodec 必挂），
+ *    而 IJK 走本地代理后是验证过能播的、后续条起播只要 60~130ms。
+ *    ExoPlayer 仍留作**老系统的第二级兜底**（真机若有硬件解码器，它是唯一能走硬解的路）。
  *
  * 这条顺序是有依据的：
  *   ① **ExoPlayer** —— 新系统上最稳（软硬解切换、容器兼容性都好）；更关键的是它取流走
@@ -39,16 +45,16 @@ public class FallbackPlayerFactory extends PlayerFactory<AbstractPlayer> {
      * 结果实际用的是 IJK、日志却报"ExoPlayer → IJK 降级"，还会白白多降一级
      * （踩过：新系统上明明直接用了 IJK，却先报一次假的 ExoPlayer 降级）。
      */
-    private static volatile int sLevel =
-            (android.os.Build.VERSION.SDK_INT >= 21) ? KERNEL_IJK : KERNEL_EXO;
+    private static volatile int sLevel = KERNEL_IJK;
     /** 某内核被判定不可用后不再尝试 */
     private static volatile boolean sExoBroken =
             // ⚠️ 关键取舍（2026-10-14）：
             //   · **API 21+（新系统）上暂时不用 ExoPlayer** —— 它在 MuMu 上实测能缓冲
             //     （BUFFERING → PREPARED）但**始终不出画面**，集成还有问题待查；
             //     而 IJK 在新系统上是验证过能播的，所以新系统直接走 IJK，别拿它冒险。
-            //   · **API < 21（老系统）上必须用 ExoPlayer** —— 它是唯一取流走 Java 网络栈、
-            //     能吃到我装的 Conscrypt 的内核（IJK / 系统 MediaPlayer 的 native TLS 太老连不上）。
+            //   · **API < 21（老系统）上 ExoPlayer 退居兜底** —— 它取流走 Java 网络栈、
+            //     能吃到我装的 Conscrypt；但它在 4.4 上首条必挂（软解器不支持 High Profile，
+            //     白等 11.2s），所以只在 IJK 也失败之后才轮得到它。
             // 等 ExoPlayer 的不出画面问题查清了，这里就可以放开。
             android.os.Build.VERSION.SDK_INT >= 21;
     private static volatile boolean sIjkBroken = false;
@@ -56,11 +62,12 @@ public class FallbackPlayerFactory extends PlayerFactory<AbstractPlayer> {
     /** 运行时降级：当前内核播不出来时调用 */
     public static void fallbackToNext(String why) {
         int old = sLevel;
-        if (sLevel == KERNEL_EXO) {
-            sExoBroken = true;
-            sLevel = KERNEL_IJK;
-        } else if (sLevel == KERNEL_IJK) {
+        if (sLevel == KERNEL_IJK) {
             sIjkBroken = true;
+            // 老系统给 ExoPlayer 留一次机会（真机硬解）；新系统的 ExoPlayer 暂时雪藏
+            sLevel = (android.os.Build.VERSION.SDK_INT < 21) ? KERNEL_EXO : KERNEL_SYSTEM;
+        } else if (sLevel == KERNEL_EXO) {
+            sExoBroken = true;
             sLevel = KERNEL_SYSTEM;
         } else {
             return;   // 已经是最后一个内核，没得退了
