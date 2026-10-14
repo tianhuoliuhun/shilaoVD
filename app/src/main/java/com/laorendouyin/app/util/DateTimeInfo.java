@@ -20,10 +20,24 @@ public final class DateTimeInfo {
     private DateTimeInfo() {
     }
 
-    /** 时间：19:15 */
+    /**
+     * 时间：`19:15` —— **强制 24 小时制，不跟随设备的「使用 24 小时制」开关**。
+     *
+     * 为什么必须强制：顶部信息栏是给不识字的使用者看的。12 小时制的 `7:15` 少一位、
+     * 还要靠 AM/PM 才能分清上午下午，对老人是纯粹的负担；而 24 小时制的两位数字
+     * 一眼就能比大小。
+     *
+     * 实现上**天然就与系统设置无关**，原因有两点（别改成 `DateFormat`，那才会跟随系统）：
+     *   ① `Calendar.HOUR_OF_DAY` 取的是 **0~23**，跟
+     *      `DateFormat.is24HourFormat()` / `Settings.System.TIME_12_24` 完全不搭界；
+     *   ② 用 `%02d:%02d` **纯数字**拼，不产生 AM/PM，也不会被 locale 的时段符号影响。
+     * locale 显式钉成 `Locale.US`：只用它的数字与冒号习惯，避免任何本地化意外。
+     *
+     * 回归测试见 `DateTimeInfoTest#time_isAlways24Hour`。
+     */
     public static String time() {
         Calendar c = Calendar.getInstance();
-        return String.format(Locale.CHINA, "%02d:%02d",
+        return String.format(Locale.US, "%02d:%02d",
                 c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE));
     }
 
