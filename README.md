@@ -87,12 +87,17 @@
 | **推荐视频** | `standard` | 适老短视频 | `com.laorendouyin.app` | 抖音推荐流 + B 站热门（**2 个源**）|
 | **老人视频** | `laoren` | 适老短视频·精选 | `com.laorendouyin.app.laoren` | 推荐流 + 六个抖音频道 + 相关视频 + B 站热门 + 美食/动物圈分区 + 广场舞搜索（**12 个源**）|
 | **老人上海话版** | `laorensh` | 适老短视频·上海老人 | `com.laorendouyin.app.laorensh` | **= 老人视频那 12 个源 + 沪语曲艺 12 个源，共 24 个源**。沪语那 12 个是：上海滑稽戏 / 沪剧 / 上海说唱 / 申曲 / 上海老歌 / 评弹 / 越剧 / 上海嘎讪胡 / 上海早晨（9 个搜索）+ 沪语 / 上海话 / 吴语（3 个标签）|
-| （17 个频道版） | `<频道>` | 适老短视频·<频道> | `com.laorendouyin.app.<频道>` | 各自只刷一个频道（**不默认构建**）|
-| （上海话专版） | `shanghai` | 适老短视频·上海话 | `com.laorendouyin.app.shanghai` | 9 个 B 站源，内容已被「老人上海话版」完整覆盖，**不再默认构建**（flavor 保留，需要时手动加 `assembleShanghaiRelease`）|
 
 **默认构建命令**：
 
     gradle :app:assembleLaorenRelease :app:assembleStandardRelease :app:assembleLaorenshRelease
+
+### 其余 18 个变体（**不默认构建**）
+
+| 变体 | flavor | 说明 |
+|---|---|---|
+| **上海话专版** | `shanghai` | 9 个 B 站源；内容已被「老人上海话版」完整覆盖，**不再构建**。flavor 仍保留，需要时手动跑 `gradle :app:assembleShanghaiRelease` |
+| **17 个抖音频道版** | `quanbu` / `gongkaike` / `meishi` / `youxi` / `erciyuan` / `tiyu` / `yinyue` / `zhishi` / `xiaojuchang` / `yingshi` / `shenghuo` / `qinzi` / `qiche` / `sannong` / `dongwu` / `lvxing` / `meizhuang` | 各自只刷一个频道，应用名「适老短视频·<频道名>」（合计 **18 个**，加上面 3 个正好 **21**）|
 
 需要全部 21 个包时显式说明，再跑 `gradle :app:assembleRelease`。
 
