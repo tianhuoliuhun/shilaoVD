@@ -956,7 +956,7 @@ public class FeedActivity extends UiActivity {
         if (battery.isEmpty()) {
             tvBattery.setVisibility(View.GONE);
         } else {
-            tvBattery.setText(battery);
+            tvBattery.setText(emphasizeDigits(battery));
             tvBattery.setVisibility(View.VISIBLE);
         }
 
@@ -999,19 +999,45 @@ public class FeedActivity extends UiActivity {
         }
     }
 
+    /** 数字亮黄（深色信息栏上最跳） */
+    private static final int COLOR_BATTERY_NUM = 0xFFFFD84D;
+    /** 该充电了：整行转红 */
+    private static final int COLOR_BATTERY_LOW = 0xFFFF6B5A;
+    /** 充电中：整行转绿 */
+    private static final int COLOR_BATTERY_CHARGING = 0xFF7DE8A0;
+
     /**
-     * 把电量那一行里的**数字**单独放大加粗。
+     * 给电量行上色，并把其中的**数字**放大加粗。
      *
-     * 整行字号已在布局里调大（15sp -> 20sp）；这里再对数字（含 % 号）乘 1.3 并加粗，
-     * 让"还剩多少电、还能看多久"成为信息栏里第一眼被看到的内容。
+     * ⚠️ 2026-10-15：这个方法此前**定义了却从没被调用** —— 所以数字放大其实一直没生效，
+     *    用户反馈的「电量字不够大」有一半是这个原因（另一半才是布局字号）。
+     *
+     * 配色（信息栏是深色半透明底，白色时间在上面）:
+     *   正常    —— 只把数字染成亮黄，整行保持白色
+     *   ≤20%    —— 整行转红，提醒该充电了
+     *   充电中  —— 整行转绿
      */
     private CharSequence emphasizeDigits(String text) {
         android.text.SpannableString sp = new android.text.SpannableString(text);
+        boolean charging = text.contains("充电中");
+        int pct = com.laorendouyin.app.util.BatteryEstimator.percentOf(text);
+        boolean low = !charging && (text.contains("电量不足")
+                || (pct >= 0 && pct <= com.laorendouyin.app.util.BatteryEstimator.LOW_PERCENT));
+        int whole = charging ? COLOR_BATTERY_CHARGING : (low ? COLOR_BATTERY_LOW : 0);
+        if (whole != 0) {
+            sp.setSpan(new android.text.style.ForegroundColorSpan(whole), 0, text.length(),
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
         for (int[] r : com.laorendouyin.app.util.BatteryEstimator.digitSpans(text)) {
-            sp.setSpan(new android.text.style.RelativeSizeSpan(1.3f), r[0], r[1],
+            sp.setSpan(new android.text.style.RelativeSizeSpan(1.35f), r[0], r[1],
                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             sp.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), r[0], r[1],
                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            // 正常状态才给数字单独上黄；整行已经变红/变绿时保持整行同色
+            if (whole == 0) {
+                sp.setSpan(new android.text.style.ForegroundColorSpan(COLOR_BATTERY_NUM), r[0], r[1],
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
         }
         return sp;
     }

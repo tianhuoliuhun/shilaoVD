@@ -79,6 +79,24 @@ public final class BatteryEstimator {
         return rate;
     }
 
+    /** 电量低于等于这个值就提醒充电（整行转红） */
+    public static final int LOW_PERCENT = 20;
+
+    /**
+     * 从文案里取出电量百分比（`电量 78%\n约可播 5小时20分` -> 78）。
+     * 取不到返回 -1。**纯函数**，供 UI 层决定配色。
+     */
+    public static int percentOf(String text) {
+        List<int[]> rs = digitSpans(text);
+        if (rs.isEmpty()) return -1;
+        String first = text.substring(rs.get(0)[0], rs.get(0)[1]).replace("%", "").trim();
+        try {
+            return Integer.parseInt(first);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
     /** 按当前速度反推还能看多少分钟 */
     static int minutesLeft(int percent, double percentPerHour) {
         if (percent <= 0) return 0;
@@ -86,27 +104,16 @@ public final class BatteryEstimator {
     }
 
     /**
-     * 文案。老人看的是一眼能懂的话；**电量与剩余时间分两行**（挤一行会糊成一团）：
+     * 文案。只给「电量 X%」这一条，**不报还能看多久**（用户 2026-10-15 要求去掉）；
+     * 只有在快没电（算出不足 1 分钟）时补一句「电量不足」：
      *   电量 78%
-     *   约可播 5小时20分
-     *   电量 9%
-     *   约可播 45分钟
+     *   电量 0%\n电量不足
      */
     static String format(int percent, int minutes) {
         if (minutes <= 0) {
             return "电量 " + percent + "%\n电量不足";
         }
-        int hours = minutes / 60;
-        int mins = minutes % 60;
-        String when;
-        if (hours == 0) {
-            when = mins + "分钟";
-        } else if (mins == 0) {
-            when = hours + "小时";
-        } else {
-            when = hours + "小时" + mins + "分";
-        }
-        return String.format(Locale.US, "电量 %d%%\n约可播 %s", percent, when);
+        return String.format(Locale.US, "电量 %d%%", percent);
     }
 
     /**

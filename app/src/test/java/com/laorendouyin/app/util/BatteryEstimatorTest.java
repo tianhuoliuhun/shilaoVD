@@ -15,7 +15,7 @@ public class BatteryEstimatorTest {
     public void noSamples_usesDefaultRate() {
         BatteryEstimator b = new BatteryEstimator();
         String s = b.update(0, 78, false);
-        assertEquals("电量 78%\n约可播 6小时30分", s);
+        assertEquals("电量 78%", s);
     }
 
     /** 充电中只显示「充电中」，不给时长 */
@@ -31,7 +31,7 @@ public class BatteryEstimatorTest {
         BatteryEstimator b = new BatteryEstimator();
         b.update(0, 50, false);
         b.update(30 * MIN, 40, false);
-        assertEquals("电量 40%\n约可播 2小时", b.update(30 * MIN, 40, false));
+        assertEquals("电量 40%", b.update(30 * MIN, 40, false));
     }
 
     /** 跨度不足 5 分钟，测出来不可信，回退到默认速度 */
@@ -40,19 +40,19 @@ public class BatteryEstimatorTest {
         BatteryEstimator b = new BatteryEstimator();
         b.update(0, 50, false);
         // 2 分钟内掉 5%：不采信，按默认 12%/h 算 45/12h = 3小时45分
-        assertEquals("电量 45%\n约可播 3小时45分", b.update(2 * MIN, 45, false));
+        assertEquals("电量 45%", b.update(2 * MIN, 45, false));
     }
 
-    /** 电量不足 1 小时时只显示分钟 */
+    /** 只给百分比，不再报「还能看多久」 */
     @Test
     public void lessThanAnHour_showsMinutes() {
-        assertEquals("电量 9%\n约可播 45分钟", BatteryEstimator.format(9, 45));
+        assertEquals("电量 9%", BatteryEstimator.format(9, 45));
     }
 
-    /** 整点小时不带分钟 */
+    /** 不再出现「约可播」字样 */
     @Test
     public void wholeHour_omitsMinutes() {
-        assertEquals("电量 50%\n约可播 4小时", BatteryEstimator.format(50, 240));
+        assertEquals("电量 50%", BatteryEstimator.format(50, 240));
     }
 
     /** 0% 时给「电量不足」，不出现负数或 0 分钟的误导文案 */
@@ -69,8 +69,8 @@ public class BatteryEstimatorTest {
         b.update(10 * MIN, 45, false);
         b.update(20 * MIN, 90, true);            // 插上充电
         String s = b.update(21 * MIN, 90, false); // 拔掉，只有一条新样本 → 兜底
-        assertTrue(s, s.startsWith("电量 90%\n约可播"));
-        assertEquals("电量 90%\n约可播 7小时30分", s);
+        assertTrue(s, s.startsWith("电量 90%"));
+        assertEquals("电量 90%", s);
     }
 
     /** 数字区间：电量百分比（含 % 号）与时长里的数字都要被找出来 */
@@ -82,6 +82,28 @@ public class BatteryEstimatorTest {
         assertEquals("78%", slice(s, r.get(0)));
         assertEquals("5", slice(s, r.get(1)));
         assertEquals("20", slice(s, r.get(2)));
+    }
+
+    /** 从文案里取百分比：正常、充电中、脏输入都要稳（输入沿用旧两行文案也要能取到） */
+    @Test
+    public void percentOf_readsFirstNumber() {
+        assertEquals(78, BatteryEstimator.percentOf("电量 78%\n约可播 5小时20分"));
+        assertEquals(9, BatteryEstimator.percentOf("电量 9%\n约可播 45分钟"));
+        assertEquals(100, BatteryEstimator.percentOf("电量 100%\n约可播 12小时59分"));
+        assertEquals(60, BatteryEstimator.percentOf("电量 60%\n充电中"));
+        assertEquals(-1, BatteryEstimator.percentOf(""));
+        assertEquals(-1, BatteryEstimator.percentOf(null));
+        assertEquals(-1, BatteryEstimator.percentOf("没有数字"));
+    }
+
+    /** 低电量阈值内才提醒充电 */
+    @Test
+    public void lowPercentThreshold_isTwenty() {
+        assertEquals(20, BatteryEstimator.LOW_PERCENT);
+        assertTrue("20% 要提醒", BatteryEstimator.percentOf("电量 20%\n约可播 1小时40分")
+                <= BatteryEstimator.LOW_PERCENT);
+        assertTrue("21% 不提醒", BatteryEstimator.percentOf("电量 21%\n约可播 1小时45分")
+                > BatteryEstimator.LOW_PERCENT);
     }
 
     /** 只有分钟、充电中、电量不足这几种形态也不能漏或错 */
