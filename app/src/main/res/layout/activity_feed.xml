@@ -82,6 +82,18 @@
         android:paddingHorizontal="16dp"
         android:paddingVertical="9dp">
 
+        <!-- 电量 + 预计可播放时长：放在星期上方；读不到电量时整行 GONE -->
+        <TextView
+            android:id="@+id/tv_clock_battery"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="3dp"
+            android:includeFontPadding="false"
+            android:textColor="#D9FFFFFF"
+            android:textSize="15sp"
+            android:visibility="gone"
+            tools:ignore="HardcodedText" />
+
         <TextView
             android:id="@+id/tv_clock_week"
             android:layout_width="wrap_content"

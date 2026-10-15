@@ -865,6 +865,16 @@ public class FeedActivity extends UiActivity {
         ((android.widget.TextView) findViewById(R.id.tv_clock_week))
                 .setText(com.laorendouyin.app.util.DateTimeInfo.week());
 
+        // 电量 + 预计可播放时长（星期上方）；读不到时整行收起
+        android.widget.TextView tvBattery = findViewById(R.id.tv_clock_battery);
+        String battery = batteryLine();
+        if (battery.isEmpty()) {
+            tvBattery.setVisibility(View.GONE);
+        } else {
+            tvBattery.setText(battery);
+            tvBattery.setVisibility(View.VISIBLE);
+        }
+
         android.widget.TextView tvFestival = findViewById(R.id.tv_clock_festival);
         String festival = com.laorendouyin.app.util.DateTimeInfo.festival();
         if (festival.isEmpty()) {
@@ -872,6 +882,35 @@ public class FeedActivity extends UiActivity {
         } else {
             tvFestival.setText(festival);
             tvFestival.setVisibility(View.VISIBLE);
+        }
+    }
+
+    /** 电量估算（只在前台采样，见 BatteryEstimator 类注释） */
+    private final com.laorendouyin.app.util.BatteryEstimator mBattery =
+            new com.laorendouyin.app.util.BatteryEstimator();
+
+    /**
+     * 读系统电量并返回信息栏文案；读不到返回空串。
+     * 用粘性广播 ACTION_BATTERY_CHANGED 而不是 BATTERY_PROPERTY_CAPACITY：
+     * 后者要 API 21+，本项目 minSdk 是 14。
+     */
+    private String batteryLine() {
+        try {
+            android.content.Intent i = registerReceiver(null,
+                    new android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED));
+            if (i == null) return "";
+            int level = i.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+            int scale = i.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1);
+            int status = i.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1);
+            if (level < 0 || scale <= 0) return "";
+            int percent = level * 100 / scale;
+            boolean charging =
+                    status == android.os.BatteryManager.BATTERY_STATUS_CHARGING
+                            || status == android.os.BatteryManager.BATTERY_STATUS_FULL;
+            return mBattery.update(android.os.SystemClock.elapsedRealtime(), percent, charging);
+        } catch (Throwable t) {
+            com.laorendouyin.app.util.AppLog.i("clock", "电量读取失败: " + t);
+            return "";
         }
     }
 
