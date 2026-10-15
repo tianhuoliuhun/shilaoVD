@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import com.laorendouyin.app.feed.FeedVideo;
 
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -20,28 +21,37 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 /**
- * 哔哩哔哩（B 站）内容源 —— 热门视频 + 播放直链解析。
+ * 哔哩哔哩（B 站）内容源 —— 支持四种取法。
  *
- * 与抖音的两处**关键差异**（2026-10-15 实测，脚本见 probe/probe_bili.js、probe_bili_play.js）：
+ * <b>源名语法</b>（写在 app/build.gradle 的 CHANNEL_TAG_ID 里，逗号分隔）：
+ * <pre>
+ *   bili                     热门榜
+ *   bili:region:&lt;rid&gt;        某个分区（频道）的排行榜 —— 如 bili:region:211（美食）
+ *   bili:search:&lt;关键词&gt;     按关键词搜索       —— 如 bili:search:广场舞
+ *   bili:tag:&lt;tag_id&gt;       某个标签下的热门   —— 如 bili:tag:23831577
+ * </pre>
+ * ⚠️ 源名之间用逗号分隔，所以**关键词里不要带逗号**。
  *
- * ① 🔴 **播放地址必须带 `Referer: https://www.bilibili.com/`**。
- *    实测 4/4 条：带 B 站 Referer → `206 video/mp4`；带抖音 Referer → `403`；空 Referer → `403`。
- *    （UA 反而不重要）所以 Referer 必须**跟着视频走**，见 {@link FeedVideo#referer}。
+ * <b>为什么统一走 durl 单文件</b>：默认的 `fnval=16` 是 DASH 音视频分离流，
+ * 我们的老人播放器只认单个 URL，拿视频轨会播成**没有声音**。
+ * 所以一律 `fnval=1` + `qn=64`（720P；⚠️ 不能要 32，那不在游客可用的 accept 清单里，反被降成 360P）。
  *
- * ② **列表接口不给播放地址**，必须对每条视频再请求一次 `x/player/playurl`。
- *    → 这里用固定并发池批量解析，并且**只解析与当前屏幕方向匹配的那几条**，
- *      避免把请求浪费在"解析出来也会被方向过滤掉"的视频上。
+ * <b>Referer</b>：B 站 CDN 只认 `https://www.bilibili.com/`（实测交叉必 403），
+ * 解析出的每条 FeedVideo 都自带这个 referer。
  *
- * 为什么用 `fnval=1`：它返回 **durl 单文件 mp4**，而我们的老人播放器只认单个 URL。
- * 默认的 `fnval=16` 是 DASH 音视频分离流（视频轨 + 音频轨分开），直接播会**没有声音**。
+ * <b>风控</b>：实测短时间高频请求会返回 `code=-352`，间隔 1.2 秒即恢复。
+ * 所以并发数压在 {@link #RESOLVE_THREADS}，且**任何一条失败只丢它自己**。
  *
- * 清晰度取 `qn=64`（720P）：实测游客态 `accept_quality=[64,16]`，
- * ⚠️ 且**必须直接要 64** —— 要 32（480P）不在清单里，会被降级成 16（360P）。
+ * 实测脚本：probe/probe_bili.js（列表 + 直链）、probe_bili_play.js（Referer 矩阵）、
+ * probe_bili_more.js（分区 / 搜索 / 标签）、probe_bili_fields.js（字段与风控复测）。
  */
 public final class BiliApi {
 
     /** B 站 CDN / PCDN 认的 Referer */
     public static final String REFERER = FeedVideo.REFERER_BILIBILI;
+
+    /** 源名前缀：build.gradle 里凡是这个开头的都交给本类 */
+    public static final String SRC_PREFIX = "bili";
 
     /** 与抖音侧一致的浏览器 UA（B 站这边实测 UA 不是必需，但带上更稳） */
     public static final String UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -52,18 +62,19 @@ public final class BiliApi {
     /** 720P。⚠️ 别改成 32：480P 不在游客可用的 accept 清单里，会被降成 360P */
     static final int QN_720P = 64;
 
-    /** 直链解析的并发数（每条一次请求，串行会慢到不可用） */
-    private static final int RESOLVE_THREADS = 6;
+    /** 直链解析并发数（每条一次请求）；压到 4 是为了少踩 B 站风控 */
+    private static final int RESOLVE_THREADS = 4;
 
-    /** 单次最多解析这么多条直链：再多就要多等好几轮，得不偿失 */
+    /** 单次最多解析这么多条：再多要多等好几轮，得不偿失 */
     private static final int MAX_RESOLVE = 8;
 
-    /** 热门列表取第几页（1~3 循环，让"刷完一批还有下一批"） */
+    /** 列表翻几页循环 */
     private static final int MAX_PAGE = 3;
 
     private final OkHttpClient client;
 
-    private int mPage = 1;
+    /** 各源各自的游标，避免"每次都刷到同一批" */
+    private final java.util.Map<String, Integer> mCursor = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** 首次访问 bilibili.com 抓到的 cookie（buvid3 等），避免被风控当成裸请求 */
     private String mCookie = "";
@@ -84,46 +95,117 @@ public final class BiliApi {
     }
 
     /**
-     * 拉一批 B 站热门视频（已带上可直接播放的 720P 直链）。
+     * 拉一批 B 站视频（已带上可直接播放的 720P 直链）。**统一入口**，按源名分派。
      *
-     * @param mode 只保留与这个方向一致的视频（竖屏拿竖的、横屏拿横的）
-     * @throws IOException 列表为空、或一条都没解析出直链时抛（交给上层换源）
+     * @param src 形如 `bili` / `bili:region:211` / `bili:search:广场舞` / `bili:tag:23831577`
+     * @throws IOException 列表为空、参数非法、或一条都没解析出直链（交给上层换源）
      */
-    public List<FeedVideo> fetchPopular(int count, DouyinApi.FeedMode mode) throws IOException {
+    public List<FeedVideo> fetch(String src, int count, DouyinApi.FeedMode mode) throws IOException {
         ensureCookie();
-        int ps = Math.max(count * 4, 20);
-        String body = get("/x/web-interface/popular?ps=" + ps + "&pn=" + mPage);
-        mPage = (mPage % MAX_PAGE) + 1;
 
-        List<Entry> entries = parsePopular(body);
+        String[] ka = splitSource(src);
+        String kind = ka[0];
+        String arg = ka[1];
+
+        List<Entry> entries;
+        if ("region".equals(kind)) {
+            entries = loadRegion(arg, mode);
+        } else if ("search".equals(kind)) {
+            entries = loadSearch(arg);
+        } else if ("tag".equals(kind)) {
+            entries = loadTag(arg, mode);
+        } else {
+            entries = loadPopular(mode);
+        }
         if (entries.isEmpty()) {
-            throw new IOException("B站热门列表为空：" + body.substring(0, Math.min(120, body.length())));
+            throw new IOException("B站源 " + src + " 没有可用条目");
         }
 
-        // 只挑方向匹配的（尺寸缺失的一律跳过 —— B 站列表基本都带 dimension）
-        boolean wantLandscape = (mode == DouyinApi.FeedMode.LANDSCAPE);
-        List<Entry> wanted = new ArrayList<>();
-        for (Entry e : entries) {
-            if (e.width <= 0 || e.height <= 0) continue;
-            if ((e.height > e.width) == wantLandscape) continue;
-            wanted.add(e);
-            if (wanted.size() >= MAX_RESOLVE) break;
-        }
-        if (wanted.isEmpty()) {
-            throw new IOException("B站热门这一页没有" + (wantLandscape ? "横" : "竖") + "屏视频");
-        }
-
-        List<FeedVideo> out = resolveAll(wanted);
+        List<FeedVideo> out = resolveAll(entries, mode);
         if (out.isEmpty()) {
-            throw new IOException("B站热门没有解析出可用直链（" + wanted.size() + " 条都失败）");
+            throw new IOException("B站源 " + src + " 没解析出可播直链（" + entries.size() + " 条都失败）");
         }
-        com.laorendouyin.app.util.AppLog.i("feed", "B站源：解析出 " + out.size() + " 条可播（"
-                + (wantLandscape ? "横" : "竖") + "屏）");
+        com.laorendouyin.app.util.AppLog.i("feed", "B站源 " + src + "：解析出 " + out.size() + " 条可播");
         return out.size() > count ? new ArrayList<>(out.subList(0, count)) : out;
     }
 
-    /** 并发解析直链；单条失败只丢它自己，不影响其余 */
-    private List<FeedVideo> resolveAll(List<Entry> entries) {
+    // ==================== 四种列表 ====================
+
+    /** 热门榜 */
+    private List<Entry> loadPopular(DouyinApi.FeedMode mode) throws IOException {
+        int page = next("popular", MAX_PAGE) + 1;
+        String body = get("/x/web-interface/popular?ps=20&pn=" + page);
+        List<Entry> all = parseRankingLike(body);
+        if (all.isEmpty()) {
+            throw new IOException("B站热门列表为空：" + body.substring(0, Math.min(120, body.length())));
+        }
+        return filterOrientation(all, mode);
+    }
+
+    /**
+     * 分区（频道）排行榜。
+     *
+     * ⚠️ `ranking/v2` **不支持翻页**（永远返回同一批 90+ 条），所以这里用"窗口游标"每次取不同的一段，
+     * 否则每次都刷到同样的开头几条。
+     */
+    private List<Entry> loadRegion(String rid, DouyinApi.FeedMode mode) throws IOException {
+        if (!isDigits(rid)) throw new IOException("B站分区 id 必须是数字：" + rid);
+        String body = get("/x/web-interface/ranking/v2?rid=" + rid + "&type=all");
+        List<Entry> all = filterOrientation(parseRankingLike(body), mode);
+        if (all.isEmpty()) {
+            throw new IOException("B站分区 " + rid + " 没有可用内容");
+        }
+        int windows = Math.max(1, all.size() / MAX_RESOLVE);
+        int w = next("region:" + rid + ":" + mode, windows);
+        int from = Math.min(all.size() - 1, w * MAX_RESOLVE);
+        int to = Math.min(all.size(), from + MAX_RESOLVE);
+        return new ArrayList<>(all.subList(from, to));
+    }
+
+    /** 关键词搜索。⚠️ 搜索结果**不带 cid / 宽高**，解析时要用 view 接口补（见 {@link #resolveOne}） */
+    private List<Entry> loadSearch(String keyword) throws IOException {
+        if (keyword == null || keyword.isEmpty()) {
+            throw new IOException("B站搜索关键词为空（写法：bili:search:关键词）");
+        }
+        int page = next("search:" + keyword, MAX_PAGE) + 1;
+        String body = get("/x/web-interface/search/type?search_type=video&page=" + page
+                + "&keyword=" + urlEncode(keyword));
+        List<Entry> all = parseSearch(body);
+        if (all.isEmpty()) {
+            throw new IOException("B站搜索「" + keyword + "」没有结果");
+        }
+        // 搜索结果没有尺寸，筛不了方向，只能先取前若干条去解析（解析时才知道方向）
+        return all.size() > MAX_RESOLVE ? new ArrayList<>(all.subList(0, MAX_RESOLVE)) : all;
+    }
+
+    /** 某个标签下的热门 */
+    private List<Entry> loadTag(String tid, DouyinApi.FeedMode mode) throws IOException {
+        if (!isDigits(tid)) throw new IOException("B站标签 id 必须是数字：" + tid);
+        int pn = next("tag:" + tid, MAX_PAGE) + 1;
+        String body = get("/x/web-interface/tag/top?tid=" + tid + "&pn=" + pn + "&ps=20");
+        List<Entry> all = filterOrientation(parseTagTop(body), mode);
+        if (all.isEmpty()) {
+            throw new IOException("B站标签 " + tid + " 没有可用内容");
+        }
+        return all.size() > MAX_RESOLVE ? new ArrayList<>(all.subList(0, MAX_RESOLVE)) : all;
+    }
+
+    /** 只留下与当前屏幕方向一致的（尺寸缺失的一律留下，交给解析阶段再判） */
+    private static List<Entry> filterOrientation(List<Entry> in, DouyinApi.FeedMode mode) {
+        boolean wantLandscape = (mode == DouyinApi.FeedMode.LANDSCAPE);
+        List<Entry> out = new ArrayList<>();
+        for (Entry e : in) {
+            if (e.width > 0 && e.height > 0 && ((e.height > e.width) == wantLandscape)) continue;
+            out.add(e);
+            if (out.size() >= MAX_RESOLVE) break;
+        }
+        return out;
+    }
+
+    // ==================== 解析播放直链 ====================
+
+    /** 并发解析直链；单条失败只丢它自己 */
+    private List<FeedVideo> resolveAll(List<Entry> entries, DouyinApi.FeedMode mode) {
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(RESOLVE_THREADS, entries.size()));
         try {
             List<Future<FeedVideo>> futures = new ArrayList<>();
@@ -131,17 +213,17 @@ public final class BiliApi {
                 futures.add(pool.submit(new Callable<FeedVideo>() {
                     @Override
                     public FeedVideo call() {
-                        return resolveOne(e);
+                        return resolveOne(e, mode);
                     }
                 }));
             }
             List<FeedVideo> out = new ArrayList<>();
             for (Future<FeedVideo> f : futures) {
                 try {
-                    FeedVideo v = f.get(20, TimeUnit.SECONDS);
+                    FeedVideo v = f.get(25, TimeUnit.SECONDS);
                     if (v != null) out.add(v);
                 } catch (Throwable ignore) {
-                    // 单条超时/失败：跳过（热门列表里少一条无所谓）
+                    // 单条超时/失败：跳过（少一条无所谓）
                 }
             }
             return out;
@@ -150,9 +232,34 @@ public final class BiliApi {
         }
     }
 
-    /** 把一条列表条目解析成可播放的 FeedVideo；失败返回 null */
-    private FeedVideo resolveOne(Entry e) {
+    /**
+     * 把一条列表条目解析成可播放的 FeedVideo；失败或方向不符返回 null。
+     *
+     * 搜索结果缺 cid 与宽高 —— 先用 `view` 接口补齐（顺便补标题/封面）。
+     */
+    private FeedVideo resolveOne(Entry e, DouyinApi.FeedMode mode) {
         try {
+            if (e.cid <= 0) {
+                String q = e.bvid.isEmpty() ? ("aid=" + e.aid) : ("bvid=" + e.bvid);
+                JsonObject d = objOf(parse(get("/x/web-interface/view?" + q)), "data");
+                if (d == null) return null;
+                e.cid = optLong(d, "cid");
+                JsonObject dim = objOf(d, "dimension");
+                if (dim != null) {
+                    e.width = optInt(dim, "width");
+                    e.height = optInt(dim, "height");
+                }
+                if (e.title.isEmpty()) e.title = optString(d, "title");
+                if (e.cover.isEmpty()) e.cover = normalizeCover(optString(d, "pic"));
+            }
+            if (e.cid <= 0) return null;
+
+            // 方向兜底（search 在列表阶段筛不了，只能到这儿才知道）
+            if (e.width > 0 && e.height > 0) {
+                boolean landscape = (e.width > e.height);
+                if (landscape != (mode == DouyinApi.FeedMode.LANDSCAPE)) return null;
+            }
+
             String body = get("/x/player/playurl?bvid=" + e.bvid + "&cid=" + e.cid
                     + "&qn=" + QN_720P + "&fnval=1&fnver=0&fourk=1");
             String url = pickDurl(body);
@@ -163,6 +270,8 @@ public final class BiliApi {
             return null;
         }
     }
+
+    // ==================== HTTP ====================
 
     /** 首次使用时访问一次网站首页，拿 buvid3 之类的 cookie（探测时是带着它跑的） */
     private void ensureCookie() {
@@ -205,11 +314,20 @@ public final class BiliApi {
         }
     }
 
+    /** 游标自增并取模（让同一个源每次拿到不同的一页） */
+    private int next(String key, int max) {
+        Integer v = mCursor.get(key);
+        int cur = (v == null || v < 0) ? 0 : v;
+        mCursor.put(key, (cur + 1) % Math.max(1, max));
+        return cur;
+    }
+
     // ==================== 纯函数（便于单测） ====================
 
-    /** 热门列表的一条（还没解析播放地址） */
+    /** 列表的一条（还没解析播放地址） */
     static final class Entry {
         String bvid = "";
+        long aid;
         long cid;
         String title = "";
         String cover = "";
@@ -218,20 +336,36 @@ public final class BiliApi {
         int height;
     }
 
-    /**
-     * 解析热门列表 JSON。**纯函数**。
-     * 只保留「有 bvid 且有 cid」的条目 —— 缺任何一个都无法继续解析播放地址。
-     */
-    static List<Entry> parsePopular(String json) {
-        List<Entry> out = new ArrayList<>();
+    /** 热门 / 分区排行：列表在 `data.list`，**带 cid 与 dimension** */
+    static List<Entry> parseRankingLike(String json) {
+        return parseList(arrOf(objOf(parse(json), "data"), "list"));
+    }
+
+    /** 标签热门：`data` 直接就是数组 */
+    static List<Entry> parseTagTop(String json) {
         JsonObject root = parse(json);
-        JsonArray list = arrOf(objOf(root, "data"), "list");
-        if (list == null) return out;
-        for (JsonElement el : list) {
+        JsonElement el = root.get("data");
+        return (el != null && el.isJsonArray()) ? parseList(el.getAsJsonArray()) : new ArrayList<Entry>();
+    }
+
+    /** 搜索结果：列表在 `data.result`，**没有 cid 与 dimension**，且标题带 `em` 高亮标签 */
+    static List<Entry> parseSearch(String json) {
+        List<Entry> out = parseList(arrOf(objOf(parse(json), "data"), "result"));
+        for (Entry e : out) {
+            e.title = stripTags(e.title);
+        }
+        return out;
+    }
+
+    private static List<Entry> parseList(JsonArray arr) {
+        List<Entry> out = new ArrayList<>();
+        if (arr == null) return out;
+        for (JsonElement el : arr) {
             if (!el.isJsonObject()) continue;
             JsonObject o = el.getAsJsonObject();
             Entry e = new Entry();
             e.bvid = optString(o, "bvid");
+            e.aid = optLong(o, "aid");
             e.cid = optLong(o, "cid");
             e.title = optString(o, "title");
             e.cover = normalizeCover(optString(o, "pic"));
@@ -242,9 +376,18 @@ public final class BiliApi {
             }
             JsonObject owner = objOf(o, "owner");
             if (owner != null) e.authorName = optString(owner, "name");
-            if (!e.bvid.isEmpty() && e.cid > 0) out.add(e);
+            if (e.authorName.isEmpty()) e.authorName = optString(o, "author");
+            // 至少要有一个能定位视频的 id
+            if (e.bvid.isEmpty() && e.aid <= 0) continue;
+            out.add(e);
         }
         return out;
+    }
+
+    /** 去掉搜索标题里的 `em` 高亮标签 */
+    static String stripTags(String s) {
+        if (s == null || s.isEmpty()) return "";
+        return s.replaceAll("<[^>]*>", "");
     }
 
     /**
@@ -270,11 +413,33 @@ public final class BiliApi {
         return pic;
     }
 
+    /**
+     * 拆源名：bili 本身 → {popular, ""}；bili:region:211 → {region, 211}；
+     * bili:search:广场舞 → {search, 广场舞}（关键词放最后一段，允许它自己带冒号）。
+     * **纯函数**。
+     */
+    static String[] splitSource(String src) {
+        String kind = "popular";
+        String arg = "";
+        String[] seg = (src == null ? "" : src).split(":", 3);
+        if (seg.length >= 2 && !seg[1].trim().isEmpty()) kind = seg[1].trim();
+        if (seg.length >= 3) arg = seg[2].trim();
+        return new String[]{kind, arg};
+    }
+
+    static boolean isDigits(String s) {
+        if (s == null || s.isEmpty()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) < '0' || s.charAt(i) > '9') return false;
+        }
+        return true;
+    }
+
     // ---- 小工具（与 DouyinApi 里那几个同源，这里自带一份，避免动到那边的可见性） ----
 
     /**
      * 宽容解析：接口在风控 / 异常时**可能回 HTML 或空串**，这里不该炸 ——
-     * 一律当成没有内容（返回空对象），由调用方按列表为空去换源。
+     * 一律当成"没有内容"（返回空对象），由调用方按"列表为空"去换源。
      */
     private static JsonObject parse(String json) {
         try {
@@ -313,5 +478,13 @@ public final class BiliApi {
         if (o == null) return 0;
         JsonElement e = o.get(key);
         return e == null || e.isJsonNull() ? 0 : e.getAsLong();
+    }
+
+    private static String urlEncode(String s) {
+        try {
+            return URLEncoder.encode(s, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

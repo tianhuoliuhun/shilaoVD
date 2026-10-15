@@ -7,6 +7,7 @@ import org.junit.Test;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -35,8 +36,8 @@ public class BiliApiTest {
             + "]}}";
 
     @Test
-    public void parsePopular_readsFieldsAndSkipsBrokenRows() {
-        List<BiliApi.Entry> list = BiliApi.parsePopular(POPULAR_JSON);
+    public void parseRankingLike_readsFieldsAndSkipsBrokenRows() {
+        List<BiliApi.Entry> list = BiliApi.parseRankingLike(POPULAR_JSON);
         assertEquals("缺 bvid 的行必须丢掉", 2, list.size());
 
         BiliApi.Entry a = list.get(0);
@@ -47,13 +48,6 @@ public class BiliApiTest {
         assertEquals(3840, a.width);
         assertEquals(2160, a.height);
         assertTrue("封面 http 必须升成 https: " + a.cover, a.cover.startsWith("https://"));
-    }
-
-    @Test
-    public void parsePopular_toleratesGarbage() {
-        assertTrue(BiliApi.parsePopular("").isEmpty());
-        assertTrue(BiliApi.parsePopular("{}").isEmpty());
-        assertTrue(BiliApi.parsePopular("not json").isEmpty());
     }
 
     /** durl 单文件直链正常取出 */
@@ -154,5 +148,110 @@ public class BiliApiTest {
 
         FeedVideo blank = new FeedVideo("t", "http://x/a.mp4", "", "123", "up", 1920, 1080, "");
         assertEquals("空 referer 兜底抖音", FeedVideo.REFERER_DOUYIN, blank.referer);
+    }
+
+    // ==================== 四种源名 ====================
+
+    /**
+     * 源名拆解：bili 本身是热门；三段式里**第三段整体当参数**（允许关键词自己带冒号），
+     * 空段要有兜底。
+     */
+    @Test
+    public void splitSource_parsesAllFourForms() {
+        assertArrayEquals(new String[]{"popular", ""}, BiliApi.splitSource("bili"));
+        assertArrayEquals(new String[]{"region", "211"}, BiliApi.splitSource("bili:region:211"));
+        assertArrayEquals(new String[]{"search", "广场舞"}, BiliApi.splitSource("bili:search:广场舞"));
+        assertArrayEquals(new String[]{"tag", "23831577"}, BiliApi.splitSource("bili:tag:23831577"));
+        // 关键词自己带冒号 → 只有前两段参与拆分
+        assertArrayEquals(new String[]{"search", "abc:def"}, BiliApi.splitSource("bili:search:abc:def"));
+        // 容错
+        assertArrayEquals(new String[]{"popular", ""}, BiliApi.splitSource("bili:"));
+        assertArrayEquals(new String[]{"popular", ""}, BiliApi.splitSource(null));
+    }
+
+    // ==================== 三种列表解析 ====================
+
+    /** 热门 / 分区排行：列表在 data.list，带 cid 与宽高 */
+    @Test
+    public void parseRankingLike_readsCidAndDimension() {
+        String json = "{\"code\":0,\"data\":{\"list\":["
+                + "{\"bvid\":\"BV1JhZcY9EFN\",\"aid\":114245006003082,\"cid\":29139667446,"
+                + "\"title\":\"分区样本\",\"pic\":\"http://i0.hdslb.com/a.jpg\","
+                + "\"dimension\":{\"width\":1080,\"height\":1920},\"owner\":{\"name\":\"UP甲\"}}"
+                + "]}}";
+        List<BiliApi.Entry> l = BiliApi.parseRankingLike(json);
+        assertEquals(1, l.size());
+        BiliApi.Entry e = l.get(0);
+        assertEquals("BV1JhZcY9EFN", e.bvid);
+        assertEquals(114245006003082L, e.aid);
+        assertEquals(29139667446L, e.cid);
+        assertEquals(1080, e.width);
+        assertEquals(1920, e.height);
+        assertEquals("UP甲", e.authorName);
+        assertTrue("封面要升 https: " + e.cover, e.cover.startsWith("https://"));
+    }
+
+    /** 标签热门：data 直接是数组（不是 list / result） */
+    @Test
+    public void parseTagTop_handlesArrayData() {
+        String json = "{\"code\":0,\"data\":["
+                + "{\"bvid\":\"BV1Xx4y1s7Fd\",\"aid\":1006538953,\"cid\":42734783220,"
+                + "\"title\":\"标签样本\",\"dimension\":{\"width\":1918,\"height\":1080}}"
+                + "]}";
+        List<BiliApi.Entry> l = BiliApi.parseTagTop(json);
+        assertEquals(1, l.size());
+        assertEquals(42734783220L, l.get(0).cid);
+        assertEquals(1918, l.get(0).width);
+        // data 不是数组时要给空表而不是炸
+        assertTrue(BiliApi.parseTagTop("{\"code\":-404,\"data\":{}}").isEmpty());
+        assertTrue(BiliApi.parseTagTop("garbage").isEmpty());
+    }
+
+    /**
+     * 搜索：列表在 data.result，**没有 cid / 宽高**，作者字段是 author（不是 owner.name），
+     * 标题带 em 高亮标签必须清掉。
+     */
+    @Test
+    public void parseSearch_stripsHtmlAndReadsAuthorField() {
+        String json = "{\"code\":0,\"data\":{\"result\":["
+                + "{\"bvid\":\"BV1GT411h76g\",\"aid\":485590891,"
+                + "\"title\":\"57分钟<em class=\\\"keyword\\\">广场舞</em>完整版\","
+                + "\"author\":\"彩虹健身模特队\",\"pic\":\"http://i2.hdslb.com/b.jpg\"}"
+                + "]}}";
+        List<BiliApi.Entry> l = BiliApi.parseSearch(json);
+        assertEquals(1, l.size());
+        BiliApi.Entry e = l.get(0);
+        assertEquals("57分钟广场舞完整版", e.title);
+        assertEquals("彩虹健身模特队", e.authorName);
+        assertEquals("搜索结果本就没有 cid", 0L, e.cid);
+        assertEquals("搜索结果本就没有宽高", 0, e.width);
+    }
+
+    /** 解析器要能扛住风控页（HTML）与各种脏数据 */
+    @Test
+    public void allParsers_tolerateGarbage() {
+        for (String junk : new String[]{"", "{}", "not json", "<html>风控</html>"}) {
+            assertTrue(BiliApi.parseRankingLike(junk).isEmpty());
+            assertTrue(BiliApi.parseTagTop(junk).isEmpty());
+            assertTrue(BiliApi.parseSearch(junk).isEmpty());
+        }
+    }
+
+    @Test
+    public void stripTags_removesHighlightMarks() {
+        assertEquals("广场舞教学", BiliApi.stripTags("<em class=\"keyword\">广场舞</em>教学"));
+        assertEquals("", BiliApi.stripTags(null));
+        assertEquals("原样", BiliApi.stripTags("原样"));
+    }
+
+    /** 分区 / 标签 id 必须是纯数字 —— 否则会拼出畸形 URL */
+    @Test
+    public void isDigits_acceptsOnlyDigits() {
+        assertTrue(BiliApi.isDigits("211"));
+        assertFalse(BiliApi.isDigits(""));
+        assertFalse(BiliApi.isDigits(null));
+        assertFalse(BiliApi.isDigits("211a"));
+        assertFalse(BiliApi.isDigits("-1"));
+        assertFalse(BiliApi.isDigits("2 11"));
     }
 }

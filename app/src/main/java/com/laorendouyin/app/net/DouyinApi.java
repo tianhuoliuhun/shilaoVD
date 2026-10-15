@@ -307,7 +307,8 @@ public final class DouyinApi {
      * ⚠️ `related` 不是频道 —— 漏了它就会被拼上 `tag_id=related` 掉进 channel/feed。
      */
     static boolean isChannelSource(String src) {
-        return !"recommend".equals(src) && !SRC_RELATED.equals(src) && !SRC_BILI.equals(src);
+        return !"recommend".equals(src) && !SRC_RELATED.equals(src)
+                && (src == null || !src.startsWith(BiliApi.SRC_PREFIX));
     }
 
     /**
@@ -345,10 +346,11 @@ public final class DouyinApi {
 
     /** 请求某一个源的一页内容；失败抛 IOException，由 fetchFeed 决定是否换源 */
     private List<FeedVideo> requestFeed(int count, int idx, FeedMode mode, String src) throws IOException {
-        // B 站走完全独立的一套接口（列表 + 逐条解析直链），这里直接短路返回
-        if (SRC_BILI.equals(src)) {
+        // B 站走完全独立的一套接口（列表 + 逐条解析直链），这里直接短路返回。
+        // 源名可带参数：bili 热门 / bili:region:<rid> 分区 / bili:search:<词> / bili:tag:<tid>
+        if (src != null && src.startsWith(BiliApi.SRC_PREFIX)) {
             if (mBiliApi == null) mBiliApi = new BiliApi();
-            return mBiliApi.fetchPopular(count, mode);
+            return mBiliApi.fetch(src, count, mode);
         }
         boolean related = SRC_RELATED.equals(src);
         boolean channel = isChannelSource(src);
