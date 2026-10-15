@@ -26,8 +26,8 @@ android {
         // minSdk 14 必需：Android 5.0（API 20）及以下没有系统级 multidex，
         // 方法数超过 64K 就必须显式开启（配合 DyApp 里的 MultiDex.install）
         multiDexEnabled true
-        versionCode 22
-        versionName '1.21'
+        versionCode 23
+        versionName '1.22'
     }
 
     // ============================================================
@@ -66,6 +66,19 @@ android {
             applicationIdSuffix '.laoren'
             buildConfigField 'String', 'CHANNEL_TAG_ID', '"recommend,300219,300209,300204,300220,300217,300221,related,bili,bili:region:211,bili:region:217,bili:search:广场舞"'
             buildConfigField 'String', 'CHANNEL_NAME', '"精选"'
+        }
+        // ---- 上海话专版（2026-10-15）----
+        // 为什么**整条流只用 B 站搜索**：抖音侧拿不到上海话内容 —— 实测搜索接口要登录（2483）、
+        // 话题列表空 body、博主作品 403，推荐流里上海话占比 0%。而 B 站搜索游客态可用，
+        // 且「滑稽戏 / 沪剧 / 上海滑稽 / 上海闲话」命中的正是上海老人的经典内容
+        // （姚慕双周柏春独脚戏、石筱英沪剧、《新闻坊·闲话上海》）。
+        // ⚠️ 别用「老娘舅」——实测搜出来是杭州《钱塘老娘舅》，不是上海那部。
+        // ⚠️ 这几个关键词的搜索结果**横屏为主**（老戏曲/老节目都是横屏），竖屏内容偏少。
+        shanghai {
+            dimension 'content'
+            applicationIdSuffix '.shanghai'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"bili:search:滑稽戏,bili:search:沪剧,bili:search:上海滑稽,bili:search:上海闲话,bili:search:上海话"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"上海话"'
         }
 
         // ---- 以下 17 个：每个频道一个独立包（2026-10-14）----

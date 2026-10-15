@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 上海话专版的应用名覆盖（flavor 目录优先级高于 main，同名即覆盖）。
+     改内容源时，同步改 app/build.gradle 里 shanghai 块的 CHANNEL_TAG_ID。 -->
+<resources>
+    <string name="app_name">适老短视频·上海话</string>
+</resources>
