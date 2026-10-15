@@ -74,6 +74,13 @@ public class FeedActivity extends UiActivity {
 
     /** 当前播放的**原始地址**（不带代理前缀）—— 要降级直连时用它重播 */
     private String mPlayingRawUrl = "";
+    /**
+     * 当前这条视频该带的 Referer。
+     *
+     * 降级重播（换代理 / 换内核）时手上只剩 URL、拿不到 FeedVideo 了，只能用这个值 ——
+     * 而抖音与 B 站的 CDN **互不认对方的 Referer**，写死会让其中一边必然 403。
+     */
+    private String mPlayingReferer = FeedVideo.REFERER_DOUYIN;
 
     /**
      * 当前这一条是不是走的**代理地址**（= 命中了缓存）。
@@ -137,9 +144,9 @@ public class FeedActivity extends UiActivity {
      * 文案与 README「版权与使用声明」保持一致，改动时两边一起改。
      */
     private static final String DISCLAIMER_TEXT =
-            "1. 本软件只是视频播放器，视频内容的版权归抖音及其创作者所有。\n\n"
+            "1. 本软件只是视频播放器，视频内容的版权归抖音、哔哩哔哩及其创作者所有。\n\n"
             + "2. 本软件仅供个人学习研究，请勿用于任何商业用途。\n\n"
-            + "3. 本项目与抖音官方没有任何关系，不是官方应用。\n\n"
+            + "3. 本项目与抖音、哔哩哔哩官方都没有任何关系，不是它们的官方应用。\n\n"
             + "4. 播放时会在本机临时保存视频片段，退出时自动清空；"
             + "本软件不提供保存、下载或分享视频的功能。\n\n"
             + "5. 请遵守当地法律法规与平台服务条款，相关后果由使用者自行承担。\n\n"
@@ -470,7 +477,7 @@ public class FeedActivity extends UiActivity {
             //    mustProxy 场景则继续给代理（坏缓存已删，代理会重新下）。
             String retryUrl = mPreloadManager.getPlayUrl(mPlayingRawUrl);
             mPlayingViaProxy = !retryUrl.equals(mPlayingRawUrl);
-            mVideoView.setUrl(retryUrl, com.laorendouyin.app.net.DouyinApi.playHeaders());
+            mVideoView.setUrl(retryUrl, com.laorendouyin.app.net.DouyinApi.playHeaders(mPlayingReferer));
             mVideoView.start();
         } catch (Throwable e) {
             com.laorendouyin.app.util.AppLog.i("feed", "降级重播失败：" + e);
@@ -518,7 +525,7 @@ public class FeedActivity extends UiActivity {
                 String replayUrl = mPreloadManager.getPlayUrl(mPlayingRawUrl);
                 mPlayingViaProxy = !replayUrl.equals(mPlayingRawUrl);
                 mProxyFallbackTried = false;   // 换了内核＝重新开始，允许新内核再走一次降级
-                mVideoView.setUrl(replayUrl, com.laorendouyin.app.net.DouyinApi.playHeaders());
+                mVideoView.setUrl(replayUrl, com.laorendouyin.app.net.DouyinApi.playHeaders(mPlayingReferer));
                 mVideoView.start();
                 com.laorendouyin.app.util.AppLog.i("feed", "已用 " + to + " 内核重放当前视频");
             } else {
@@ -649,9 +656,10 @@ public class FeedActivity extends UiActivity {
                 // 记录"这一条是怎么播的"：播放失败时据此决定要不要降级
                 String playUrl = mPreloadManager.getPlayUrl(video.playUrl);
                 mPlayingRawUrl = video.playUrl;
+                mPlayingReferer = video.referer;
                 mPlayingViaProxy = !playUrl.equals(video.playUrl);
                 mProxyFallbackTried = false;
-                mVideoView.setUrl(playUrl, DouyinApi.playHeaders());
+                mVideoView.setUrl(playUrl, DouyinApi.playHeaders(mPlayingReferer));
                 mController.addControlComponent(viewHolder.mTikTokView, true);
                 viewHolder.mPlayerContainer.addView(mVideoView, 0);
                 mVideoView.start();

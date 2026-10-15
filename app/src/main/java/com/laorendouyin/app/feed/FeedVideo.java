@@ -17,6 +17,11 @@ package com.laorendouyin.app.feed;
  */
 public class FeedVideo {
 
+    /** 抖音 CDN 认的 Referer */
+    public static final String REFERER_DOUYIN = "https://www.douyin.com/";
+    /** B 站 CDN 认的 Referer（与抖音**互不通用**：交叉必 403） */
+    public static final String REFERER_BILIBILI = "https://www.bilibili.com/";
+
     public final String title;
     public final String playUrl;
     public final String coverUrl;
@@ -26,9 +31,22 @@ public class FeedVideo {
     public final int videoWidth;
     /** 视频高（接口 video.height），<=0 表示接口没给 */
     public final int videoHeight;
+    /**
+     * 播放这条视频时**必须带的 Referer**。
+     *
+     * 为什么要跟着视频走：抖音 CDN 与 B 站 CDN **互不认对方的 Referer** ——
+     * 实测（2026-10-15）B 站直链带抖音 Referer 或空 Referer 一律 403，只有 bilibili.com 才给 206。
+     * 所以这个值由各自的接口类在解析时填好，播放时原样带上。
+     */
+    public final String referer;
 
     public FeedVideo(String title, String playUrl, String coverUrl, String awemeId,
                      String authorName, int videoWidth, int videoHeight) {
+        this(title, playUrl, coverUrl, awemeId, authorName, videoWidth, videoHeight, REFERER_DOUYIN);
+    }
+
+    public FeedVideo(String title, String playUrl, String coverUrl, String awemeId,
+                     String authorName, int videoWidth, int videoHeight, String referer) {
         this.title = title == null ? "" : title;
         this.playUrl = playUrl == null ? "" : playUrl;
         this.coverUrl = coverUrl == null ? "" : coverUrl;
@@ -36,6 +54,7 @@ public class FeedVideo {
         this.authorName = authorName == null ? "" : authorName;
         this.videoWidth = videoWidth;
         this.videoHeight = videoHeight;
+        this.referer = (referer == null || referer.isEmpty()) ? REFERER_DOUYIN : referer;
     }
 
     /** 是否横屏视频（宽 > 高）。尺寸缺失时按竖屏算（推荐流里缺尺寸的绝大多数是竖屏内容） */

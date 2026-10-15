@@ -26,8 +26,8 @@ android {
         // minSdk 14 必需：Android 5.0（API 20）及以下没有系统级 multidex，
         // 方法数超过 64K 就必须显式开启（配合 DyApp 里的 MultiDex.install）
         multiDexEnabled true
-        versionCode 20
-        versionName '1.19'
+        versionCode 21
+        versionName '1.20'
     }
 
     // ============================================================
@@ -46,7 +46,7 @@ android {
     productFlavors {
         standard {
             dimension 'content'
-            buildConfigField 'String', 'CHANNEL_TAG_ID', '""'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"recommend,bili"'
             buildConfigField 'String', 'CHANNEL_NAME', '""'
         }
         // ---- 老人专版：推荐流 + 6 个频道 轮询（2026-10-14）----
@@ -64,7 +64,7 @@ android {
         laoren {
             dimension 'content'
             applicationIdSuffix '.laoren'
-            buildConfigField 'String', 'CHANNEL_TAG_ID', '"recommend,300219,300209,300204,300220,300217,300221,related"'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"recommend,300219,300209,300204,300220,300217,300221,related,bili"'
             buildConfigField 'String', 'CHANNEL_NAME', '"精选"'
         }
 

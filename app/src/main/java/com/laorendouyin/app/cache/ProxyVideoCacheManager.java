@@ -86,7 +86,8 @@ public class ProxyVideoCacheManager {
                 .headerInjector(new HeaderInjector() {
                     @Override
                     public Map<String, String> addHeaders(String url) {
-                        return DouyinApi.playHeaders();
+                        // 代理这一层只有 URL、拿不到 FeedVideo，只能按域名推断内容源
+                        return DouyinApi.playHeaders(DouyinApi.refererForUrl(url));
                     }
                 })
                 // 缓存放在应用私有的内部 cache 目录，而不是外部存储（默认位置在 SD 卡上，

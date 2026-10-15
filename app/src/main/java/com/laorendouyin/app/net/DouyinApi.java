@@ -70,13 +70,43 @@ public final class DouyinApi {
      * 实测头矩阵（2026-09-26）：带 Referer 即可 206 video/mp4，Cookie 反而不需要。
      */
     public static Map<String, String> playHeaders() {
+        return playHeaders(FeedVideo.REFERER_DOUYIN);
+    }
+
+    /**
+     * 播放头（按内容源给对应 Referer）。
+     *
+     * 🔴 抖音与 B 站的 CDN **互不认对方的 Referer**：实测 B 站直链带抖音 Referer 一律 403，
+     * 空 Referer 同样 403。所以这个值必须跟着视频走（{@link FeedVideo#referer}），不能全局写死。
+     */
+    public static Map<String, String> playHeaders(String referer) {
         Map<String, String> h = new LinkedHashMap<>();
         h.put("User-Agent", UA);
-        h.put("Referer", "https://www.douyin.com/");
+        h.put("Referer", (referer == null || referer.isEmpty()) ? FeedVideo.REFERER_DOUYIN : referer);
         return h;
     }
 
+    /**
+     * 只拿到 URL、不知道来源时（本地代理的 HeaderInjector 就是这种情况）按域名推断。
+     *
+     * 判据取「B 站的 CDN / PCDN 域名」，其余一律当抖音 —— 抖音的 CDN 域名集中
+     * （douyinvod / douyinpic），而 B 站的 CDN 又杂又会变（bilivideo、hdslb、akamaized、
+     * szbdyd，以及第三方 PCDN 如 mountaintoys）。
+     */
+    public static String refererForUrl(String url) {
+        if (url == null || url.isEmpty()) return FeedVideo.REFERER_DOUYIN;
+        String u = url.toLowerCase(java.util.Locale.US);
+        if (u.contains("bilivideo") || u.contains("bilibili") || u.contains("hdslb")
+                || u.contains("akamaized") || u.contains("szbdyd") || u.contains("mountaintoys")
+                || u.contains("biligame") || u.contains("biliapi") || u.contains("b23.tv")) {
+            return FeedVideo.REFERER_BILIBILI;
+        }
+        return FeedVideo.REFERER_DOUYIN;
+    }
+
     private final OkHttpClient client;
+    /** B 站内容源（懒创建：只有变体配置里带 bili 源时才用得上） */
+    private BiliApi mBiliApi;
     private final Signer signer;
     private final Map<String, String> cookies = new LinkedHashMap<>();
     /** 翻页游标（每个方向各记一份：切横竖屏不该互相干扰） */
@@ -118,7 +148,7 @@ public final class DouyinApi {
      * 系统默认的 TLS 1.0，服务器直接回 `tlsv1 alert protocol version`（实测踩到）。
      * COMPATIBLE_TLS 的套件表包含老系统也能用的那些，再叠加 TLS 1.2 就能在新老设备上都握手成功。
      */
-    private static java.util.List<okhttp3.ConnectionSpec> buildTlsSpecs() {
+    static java.util.List<okhttp3.ConnectionSpec> buildTlsSpecs() {
         okhttp3.ConnectionSpec tls = new okhttp3.ConnectionSpec.Builder(okhttp3.ConnectionSpec.COMPATIBLE_TLS)
                 .tlsVersions(okhttp3.TlsVersion.TLS_1_2,
                         okhttp3.TlsVersion.TLS_1_1,
@@ -221,6 +251,14 @@ public final class DouyinApi {
      */
     public static final String SRC_RELATED = "related";
 
+    /**
+     * 特殊源名：**「哔哩哔哩热门」**（实际请求在 {@link BiliApi}）。
+     *
+     * ⚠️ 它比别的源慢：B 站列表接口不给播放地址，每条都要再请求一次 playurl 解析直链
+     * （并发 6 条，约 1~2 秒）。所以轮询时排在后面，失败就换源、不拖住整体。
+     */
+    public static final String SRC_BILI = "bili";
+
     /** 解析后的源列表（空数组 = 只有推荐流） */
     private static final String[] SOURCES = splitSources(CHANNEL_TAG_ID);
 
@@ -269,7 +307,7 @@ public final class DouyinApi {
      * ⚠️ `related` 不是频道 —— 漏了它就会被拼上 `tag_id=related` 掉进 channel/feed。
      */
     static boolean isChannelSource(String src) {
-        return !"recommend".equals(src) && !SRC_RELATED.equals(src);
+        return !"recommend".equals(src) && !SRC_RELATED.equals(src) && !SRC_BILI.equals(src);
     }
 
     /**
@@ -307,6 +345,11 @@ public final class DouyinApi {
 
     /** 请求某一个源的一页内容；失败抛 IOException，由 fetchFeed 决定是否换源 */
     private List<FeedVideo> requestFeed(int count, int idx, FeedMode mode, String src) throws IOException {
+        // B 站走完全独立的一套接口（列表 + 逐条解析直链），这里直接短路返回
+        if (SRC_BILI.equals(src)) {
+            if (mBiliApi == null) mBiliApi = new BiliApi();
+            return mBiliApi.fetchPopular(count, mode);
+        }
         boolean related = SRC_RELATED.equals(src);
         boolean channel = isChannelSource(src);
         String tagId = channel ? src : "";
@@ -458,7 +501,8 @@ public final class DouyinApi {
             if (coverUrl.isEmpty()) coverUrl = imageUrl(video, "origin_cover");
         }
         if (playUrl.isEmpty()) return null;
-        return new FeedVideo(title, playUrl, coverUrl, awemeId, author, videoWidth, videoHeight);
+        return new FeedVideo(title, playUrl, coverUrl, awemeId, author, videoWidth, videoHeight,
+                FeedVideo.REFERER_DOUYIN);
     }
 
     /**

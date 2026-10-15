@@ -1,0 +1,158 @@
+package com.laorendouyin.app.net;
+
+import com.laorendouyin.app.feed.FeedVideo;
+
+import org.junit.Test;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+/**
+ * B 站内容源的纯函数单测（离线）。
+ *
+ * 重点盯住两条"错了就静默播不出来"的规则：
+ *   ① 播放地址只能取 **durl 单文件**，绝不能退回 dash —— dash 是纯视频轨，播出来没声音；
+ *   ② **Referer 必须按源区分** —— 抖音与 B 站 CDN 互不认对方的 Referer（实测交叉必 403）。
+ */
+public class BiliApiTest {
+
+    /** 热门列表样本（字段名照抄真实响应 + 一条缺 bvid 的脏数据） */
+    private static final String POPULAR_JSON = "{"
+            + "\"code\":0,\"data\":{\"list\":["
+            + "{\"bvid\":\"BV1VVpo6gEYg\",\"cid\":42682355579,\"title\":\"测试视频一\","
+            + "\"pic\":\"http://i2.hdslb.com/bfs/archive/a.jpg\","
+            + "\"dimension\":{\"width\":3840,\"height\":2160},"
+            + "\"owner\":{\"name\":\"UP主甲\"}},"
+            + "{\"bvid\":\"BV1test2\",\"cid\":12345,\"title\":\"测试视频二\","
+            + "\"pic\":\"https://i0.hdslb.com/bfs/archive/b.jpg\","
+            + "\"dimension\":{\"width\":1080,\"height\":1920},"
+            + "\"owner\":{\"name\":\"UP主乙\"}},"
+            + "{\"bvid\":\"\",\"cid\":999,\"title\":\"没有 bvid 的脏数据\"}"
+            + "]}}";
+
+    @Test
+    public void parsePopular_readsFieldsAndSkipsBrokenRows() {
+        List<BiliApi.Entry> list = BiliApi.parsePopular(POPULAR_JSON);
+        assertEquals("缺 bvid 的行必须丢掉", 2, list.size());
+
+        BiliApi.Entry a = list.get(0);
+        assertEquals("BV1VVpo6gEYg", a.bvid);
+        assertEquals(42682355579L, a.cid);
+        assertEquals("测试视频一", a.title);
+        assertEquals("UP主甲", a.authorName);
+        assertEquals(3840, a.width);
+        assertEquals(2160, a.height);
+        assertTrue("封面 http 必须升成 https: " + a.cover, a.cover.startsWith("https://"));
+    }
+
+    @Test
+    public void parsePopular_toleratesGarbage() {
+        assertTrue(BiliApi.parsePopular("").isEmpty());
+        assertTrue(BiliApi.parsePopular("{}").isEmpty());
+        assertTrue(BiliApi.parsePopular("not json").isEmpty());
+    }
+
+    /** durl 单文件直链正常取出 */
+    @Test
+    public void pickDurl_takesSingleFileUrl() {
+        String json = "{\"code\":0,\"data\":{\"quality\":64,\"durl\":["
+                + "{\"order\":1,\"size\":11706808,\"url\":\"https://x.mountaintoys.cn:4483/a.mp4?e=1\"}]}}";
+        assertEquals("https://x.mountaintoys.cn:4483/a.mp4?e=1", BiliApi.pickDurl(json));
+    }
+
+    /**
+     * durl 里 url 不是 http 开头（脏数据）时返回空，宁可不播也不给坏地址
+     */
+    @Test
+    public void pickDurl_rejectsNonHttpUrl() {
+        String json = "{\"code\":0,\"data\":{\"durl\":[{\"url\":\"\"}]}}";
+        assertTrue(BiliApi.pickDurl(json).isEmpty());
+        assertTrue(BiliApi.pickDurl("{\"data\":{}}").isEmpty());
+        assertTrue(BiliApi.pickDurl("garbage").isEmpty());
+    }
+
+    /**
+     * 只有 dash（音视频分离）时必须返回空 —— 绝不能"退而求其次"拿 dash 的视频轨地址，
+     * 那样播出来是**没有声音**的，对老人等于坏视频。
+     */
+    @Test
+    public void pickDurl_returnsEmptyWhenOnlyDash() {
+        String json = "{\"code\":0,\"data\":{\"quality\":32,\"durl\":[],"
+                + "\"dash\":{\"video\":[{\"baseUrl\":\"https://v.bilivideo.com/video.m4s\"}],"
+                + "\"audio\":[{\"baseUrl\":\"https://v.bilivideo.com/audio.m4s\"}]}}}";
+        assertTrue("只有 dash 时必须返回空: " + BiliApi.pickDurl(json), BiliApi.pickDurl(json).isEmpty());
+    }
+
+    @Test
+    public void normalizeCover_upgradesHttpOnly() {
+        assertEquals("https://a/b.jpg", BiliApi.normalizeCover("http://a/b.jpg"));
+        assertEquals("https://a/b.jpg", BiliApi.normalizeCover("https://a/b.jpg"));
+        assertEquals("", BiliApi.normalizeCover(""));
+        assertEquals("", BiliApi.normalizeCover(null));
+    }
+
+    /**
+     * 🔴 Referer 必须按源区分：B 站域名给 bilibili、其余给抖音。
+     */
+    @Test
+    public void refererForUrl_detectsBilibiliDomains() {
+        String[] bili = {
+                "https://809al93l.edge.mountaintoys.cn:4483/upgcxcode/x.mp4",
+                "https://xy.mcdn.bilivideo.cn:8082/v1/resource/x.m4s",
+                "http://i0.hdslb.com/bfs/archive/a.jpg",
+                "https://upos-sz-mirrorcos.bilivideo.com/x.mp4",
+                "https://api.bilibili.com/x/web-interface/popular",
+        };
+        for (String u : bili) {
+            assertEquals("应判为 B 站: " + u, FeedVideo.REFERER_BILIBILI, DouyinApi.refererForUrl(u));
+        }
+        String[] douyin = {
+                "https://v11-weba.douyinvod.com/x/video.mp4",
+                "https://p3-pc-sign.douyinpic.com/image/a.jpeg",
+                "https://www.douyin.com/aweme/v1/play/?video_id=x",
+        };
+        for (String u : douyin) {
+            assertEquals("应判为抖音: " + u, FeedVideo.REFERER_DOUYIN, DouyinApi.refererForUrl(u));
+        }
+        assertEquals("空 URL 兜底抖音", FeedVideo.REFERER_DOUYIN, DouyinApi.refererForUrl(""));
+        assertEquals("null 兜底抖音", FeedVideo.REFERER_DOUYIN, DouyinApi.refererForUrl(null));
+    }
+
+    /** 播放头真的带上对应 Referer（漏了就是 403） */
+    @Test
+    public void playHeaders_usesGivenReferer() {
+        Map<String, String> b = DouyinApi.playHeaders(FeedVideo.REFERER_BILIBILI);
+        assertEquals(FeedVideo.REFERER_BILIBILI, b.get("Referer"));
+        Map<String, String> d = DouyinApi.playHeaders();
+        assertEquals(FeedVideo.REFERER_DOUYIN, d.get("Referer"));
+        Map<String, String> e = DouyinApi.playHeaders("");
+        assertEquals("空 referer 兜底抖音", FeedVideo.REFERER_DOUYIN, e.get("Referer"));
+    }
+
+    /** bili 不是频道 tag_id —— 漏了会被拼上假 tag_id 掉进 channel/feed */
+    @Test
+    public void biliSource_isNotTreatedAsChannel() {
+        assertFalse(DouyinApi.isChannelSource(DouyinApi.SRC_BILI));
+        assertFalse(DouyinApi.isChannelSource(DouyinApi.SRC_RELATED));
+        assertFalse(DouyinApi.isChannelSource("recommend"));
+        assertTrue(DouyinApi.isChannelSource("300204"));
+    }
+
+    /** B 站条目必须自带 B 站 Referer（抖音条目则带抖音的） */
+    @Test
+    public void feedVideo_carriesItsOwnReferer() {
+        FeedVideo bili = new FeedVideo("t", "http://x/a.mp4", "", "BV1", "up", 1920, 1080,
+                FeedVideo.REFERER_BILIBILI);
+        assertEquals(FeedVideo.REFERER_BILIBILI, bili.referer);
+
+        FeedVideo douyin = new FeedVideo("t", "http://x/a.mp4", "", "123", "up", 1920, 1080);
+        assertEquals("旧构造默认抖音", FeedVideo.REFERER_DOUYIN, douyin.referer);
+
+        FeedVideo blank = new FeedVideo("t", "http://x/a.mp4", "", "123", "up", 1920, 1080, "");
+        assertEquals("空 referer 兜底抖音", FeedVideo.REFERER_DOUYIN, blank.referer);
+    }
+}
