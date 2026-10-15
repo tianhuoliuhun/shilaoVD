@@ -2,5 +2,5 @@
 <!-- 频道专版的资源覆盖：与 main 同名即可覆盖（flavor 目录优先级高于 main）。
      频道名变更时，同时改 app/build.gradle 里的 CHANNEL_NAME，保持一致。 -->
 <resources>
-    <string name="app_name">老人抖抖·三农</string>
+    <string name="app_name">适老短视频·三农</string>
 </resources>

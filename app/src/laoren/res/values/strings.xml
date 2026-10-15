@@ -2,5 +2,5 @@
 <!-- 老人专版：推荐流 + 三农/音乐/美食/动物 四个频道轮询。
      频道的挑选依据见 app/build.gradle 里 laoren 变体的注释。 -->
 <resources>
-    <string name="app_name">老人抖抖·精选</string>
+    <string name="app_name">适老短视频·精选</string>
 </resources>

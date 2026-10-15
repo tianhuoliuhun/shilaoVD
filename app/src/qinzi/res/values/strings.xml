@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 亲子频道专版（tag_id=300217）的应用名覆盖。改频道时同步改 app/build.gradle 里的 CHANNEL_TAG_ID。 -->
 <resources>
-    <string name="app_name">老人抖抖·亲子</string>
+    <string name="app_name">适老短视频·亲子</string>
 </resources>
