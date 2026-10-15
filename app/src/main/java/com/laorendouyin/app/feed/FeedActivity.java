@@ -121,9 +121,58 @@ public class FeedActivity extends UiActivity {
         mViewPager.post(new Runnable() {
             @Override
             public void run() {
-                startPlay(0);
+                if (isDisclaimerAccepted()) {
+                    startPlay(0);
+                } else {
+                    showDisclaimerThenPlay();
+                }
             }
         });
+    }
+
+    // ---------- 使用须知（首次启动弹窗）----------
+
+    /**
+     * 使用须知文案。版本号与同意状态见 {@link com.laorendouyin.app.util.LegalState}。
+     * 文案与 README「版权与使用声明」保持一致，改动时两边一起改。
+     */
+    private static final String DISCLAIMER_TEXT =
+            "1. 本软件只是视频播放器，视频内容的版权归抖音及其创作者所有。\n\n"
+            + "2. 本软件仅供个人学习研究，请勿用于任何商业用途。\n\n"
+            + "3. 本项目与抖音官方没有任何关系，不是官方应用。\n\n"
+            + "4. 播放时会在本机临时保存视频片段，退出时自动清空；"
+            + "本软件不提供保存、下载或分享视频的功能。\n\n"
+            + "5. 请遵守当地法律法规与平台服务条款，相关后果由使用者自行承担。\n\n"
+            + "6. 请在下载后 24 小时内删除本软件。";
+
+    private boolean isDisclaimerAccepted() {
+        return com.laorendouyin.app.util.LegalState.isDisclaimerAccepted(this);
+    }
+
+    /**
+     * 首次启动弹出使用须知。
+     * 同意 → 记下版本号并开始播放；不同意 → 退出应用。
+     * 不可取消（返回键、点空白处都关不掉），必须二选一。
+     */
+    private void showDisclaimerThenPlay() {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("使用须知")
+                .setMessage(DISCLAIMER_TEXT)
+                .setCancelable(false)
+                .setPositiveButton("我同意", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        com.laorendouyin.app.util.LegalState.acceptDisclaimer(FeedActivity.this);
+                        startPlay(0);
+                    }
+                })
+                .setNegativeButton("不同意并退出", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        finish();
+                    }
+                })
+                .show();
     }
 
     // ---------- 方向分流 ----------
@@ -557,6 +606,8 @@ public class FeedActivity extends UiActivity {
      *    （否则用户正在看的视频会从头缓冲一遍 —— 这是明确要求避免的）。
      */
     private void startPlay(final int position, final int attempt) {
+        // 未同意使用须知前一律不播放（见 showDisclaimerThenPlay）
+        if (!isDisclaimerAccepted()) return;
         if (position < 0 || position >= mVideoList.size()) return;
         int count = mViewPager.getChildCount();
         for (int i = 0; i < count; i++) {
