@@ -250,7 +250,9 @@ public final class DouyinApi {
         String tagId = "";
         String srcName = "推荐";
         if (SOURCES.length > 0) {
-            final String src = SOURCES[Math.floorMod(sSourceIdx.getAndIncrement(), SOURCES.length)];
+            // 不用 Math.floorMod：它是 API 24 才有的方法，Android 4.x 上会 NoSuchMethodError。
+            // 与 & Integer.MAX_VALUE 等价地保证索引非负（计数器溢出后会变负数）。
+            final String src = SOURCES[(sSourceIdx.getAndIncrement() & Integer.MAX_VALUE) % SOURCES.length];
             if (isChannelSource(src)) {
                 tagId = src;
                 srcName = "频道" + src;
