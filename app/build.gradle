@@ -26,8 +26,8 @@ android {
         // minSdk 14 必需：Android 5.0（API 20）及以下没有系统级 multidex，
         // 方法数超过 64K 就必须显式开启（配合 DyApp 里的 MultiDex.install）
         multiDexEnabled true
-        versionCode 26
-        versionName '1.25'
+        versionCode 29
+        versionName '1.28'
     }
 
     // ============================================================
@@ -79,6 +79,25 @@ android {
             applicationIdSuffix '.shanghai'
             buildConfigField 'String', 'CHANNEL_TAG_ID', '"bili:search:滑稽戏,bili:search:沪剧,bili:search:上海滑稽,bili:search:上海闲话,bili:search:上海话,bili:search:上海嘎讪胡,bili:tag:23098,bili:tag:3220,bili:tag:56775"'
             buildConfigField 'String', 'CHANNEL_NAME', '"上海话"'
+        }
+        // ---- 老人上海话版（2026-10-15）----
+        // 定位：给**上海老人**看。与 shanghai（泛上海话）的区别是**把教学内容换掉** ——
+        // 去掉「上海话 / 上海闲话」这类教学·杂谈向的词（对会说上海话的老人没用），
+        // 换成老人真正爱看的传统曲艺与本地节目（以下关键词均实测各 20 条）：
+        //   上海滑稽戏 —— 姚慕双周柏春 / 毛猛达 / 王汝刚李九松 /《七十二家房客》
+        //   沪剧      —— 《芦荡火种》《阿必大》等
+        //   上海说唱  —— 黄永生《金陵塔》/ 1995 说唱集锦
+        //   申曲      —— 沪剧老唱片（申曲是沪剧旧称）、东乡调
+        //   上海老歌  —— 周璇 /《夜来香》《夜上海》/ 民国金曲
+        //   评弹      —— 苏州评弹名曲、吴侬软语
+        //   上海嘎讪胡 —— SMG 都市频道沪语脱口秀
+        //   上海早晨  —— SMG 早间新闻，每天更新
+        // 标签同 shanghai：沪语 / 上海话 / 吴语（实测这三者竖屏占比高）
+        laorensh {
+            dimension 'content'
+            applicationIdSuffix '.laorensh'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"recommend,300219,300209,300204,300220,300217,300221,related,bili,bili:region:211,bili:region:217,bili:search:广场舞,bili:search:上海滑稽戏,bili:search:沪剧,bili:search:上海说唱,bili:search:申曲,bili:search:上海老歌,bili:search:评弹,bili:search:越剧,bili:search:上海嘎讪胡,bili:search:上海早晨,bili:tag:23098,bili:tag:3220,bili:tag:56775"'
+            buildConfigField 'String', 'CHANNEL_NAME', '"上海老人"'
         }
 
         // ---- 以下 17 个：每个频道一个独立包（2026-10-14）----

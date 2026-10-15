@@ -42,7 +42,7 @@ public final class BatteryEstimator {
         if (charging) {
             // 充电期间的数据没有意义，拔掉后从头测
             mSamples.clear();
-            return "电量 " + percent + "% · 充电中";
+            return "电量 " + percent + "%\n充电中";
         }
 
         // 电量比上次采样还高 => 中间插过电，之前的样本作废
@@ -86,13 +86,15 @@ public final class BatteryEstimator {
     }
 
     /**
-     * 文案。老人看的是一眼能懂的话：
-     *   电量 78% · 约可播 5小时20分
-     *   电量 9% · 约可播 45分钟
+     * 文案。老人看的是一眼能懂的话；**电量与剩余时间分两行**（挤一行会糊成一团）：
+     *   电量 78%
+     *   约可播 5小时20分
+     *   电量 9%
+     *   约可播 45分钟
      */
     static String format(int percent, int minutes) {
         if (minutes <= 0) {
-            return "电量 " + percent + "% · 电量不足";
+            return "电量 " + percent + "%\n电量不足";
         }
         int hours = minutes / 60;
         int mins = minutes % 60;
@@ -104,7 +106,7 @@ public final class BatteryEstimator {
         } else {
             when = hours + "小时" + mins + "分";
         }
-        return String.format(Locale.US, "电量 %d%% · 约可播 %s", percent, when);
+        return String.format(Locale.US, "电量 %d%%\n约可播 %s", percent, when);
     }
 
     /**

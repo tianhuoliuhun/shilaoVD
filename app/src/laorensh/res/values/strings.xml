@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 老人上海话版的应用名覆盖（flavor 目录优先级高于 main）。
+     改内容源时同步改 app/build.gradle 里 laorensh 块的 CHANNEL_TAG_ID。 -->
+<resources>
+    <string name="app_name">适老短视频·上海老人</string>
+</resources>
