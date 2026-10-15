@@ -77,6 +77,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
+        android:gravity="right"
         android:layout_marginEnd="18dp"
         android:layout_marginTop="16dp"
         android:background="@drawable/bg_info_panel"
@@ -86,7 +87,7 @@
         android:paddingTop="9dp"
         android:paddingBottom="9dp">
 
-        <!-- 电量 + 预计可播放时长：放在星期上方；读不到电量时整行 GONE -->
+        <!-- 电量：放在星期上方；读不到电量时整行 GONE。整块靠右对齐见 clock_right 的 gravity -->
         <TextView
             android:id="@+id/tv_clock_battery"
             android:layout_width="wrap_content"
