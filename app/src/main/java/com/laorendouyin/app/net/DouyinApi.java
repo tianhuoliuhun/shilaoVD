@@ -210,9 +210,12 @@ public final class DouyinApi {
     /** 解析后的源列表（空数组 = 只有推荐流） */
     private static final String[] SOURCES = splitSources(CHANNEL_TAG_ID);
 
-    /** 轮询游标：每次拉流换下一个源，让多源内容自然混合 */
-    private static final java.util.concurrent.atomic.AtomicInteger sSourceIdx =
-            new java.util.concurrent.atomic.AtomicInteger(0);
+    /**
+     * 源轮询 + 失败降级。无源时只有一个「recommend」（即推荐流）。
+     * 某源失败会冷却一段时间，见 {@link FeedSourcePicker}。
+     */
+    private static final FeedSourcePicker sPicker = new FeedSourcePicker(
+            SOURCES.length > 0 ? SOURCES : new String[]{"recommend"});
 
     private static String[] splitSources(String cfg) {
         if (cfg == null || cfg.trim().isEmpty()) return new String[0];
@@ -246,20 +249,30 @@ public final class DouyinApi {
         ensureTtwid();
         int idx = getRefreshIndex(mode) + 1;
         mRefreshIndex.put(mode, idx);
-        // 轮询取下一个内容源（空列表 = 只有推荐流）
-        String tagId = "";
-        String srcName = "推荐";
-        if (SOURCES.length > 0) {
-            // 不用 Math.floorMod：它是 API 24 才有的方法，Android 4.x 上会 NoSuchMethodError。
-            // 与 & Integer.MAX_VALUE 等价地保证索引非负（计数器溢出后会变负数）。
-            final String src = SOURCES[(sSourceIdx.getAndIncrement() & Integer.MAX_VALUE) % SOURCES.length];
-            if (isChannelSource(src)) {
-                tagId = src;
-                srcName = "频道" + src;
+
+        // 按轮询顺序尝试候选源；某个源失败就记下冷却、换下一个，全部失败才抛错。
+        IOException last = null;
+        for (String src : sPicker.candidates(System.currentTimeMillis())) {
+            try {
+                List<FeedVideo> list = requestFeed(count, idx, mode, src);
+                sPicker.markOk(src);
+                return list;
+            } catch (IOException e) {
+                sPicker.markFailed(src, System.currentTimeMillis());
+                com.laorendouyin.app.util.AppLog.i("feed", "内容源 " + src + " 失败，换下一个：" + e.getMessage());
+                last = e;
             }
         }
+        throw last != null ? last : new IOException("没有可用的内容源");
+    }
+
+    /** 请求某一个源的一页内容；失败抛 IOException，由 fetchFeed 决定是否换源 */
+    private List<FeedVideo> requestFeed(int count, int idx, FeedMode mode, String src) throws IOException {
+        boolean channel = isChannelSource(src);
+        String tagId = channel ? src : "";
+        String srcName = channel ? "频道" + src : "推荐";
         String query = buildFeedQuery(count, idx, mode, signer, tagId);
-        String path = tagId.isEmpty() ? "/aweme/v1/web/tab/feed/" : "/aweme/v1/web/channel/feed/";
+        String path = channel ? "/aweme/v1/web/channel/feed/" : "/aweme/v1/web/tab/feed/";
         com.laorendouyin.app.util.AppLog.i("feed", "内容源：" + srcName
                 + (SOURCES.length > 1 ? "（共 " + SOURCES.length + " 个源轮询）" : ""));
         Request req = new Request.Builder()

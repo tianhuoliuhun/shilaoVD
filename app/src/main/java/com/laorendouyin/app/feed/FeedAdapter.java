@@ -98,8 +98,10 @@ public class FeedAdapter extends PagerAdapter {
         viewHolder.mPlayerContainer.removeAllViews();
         // 封面回位（复用视图可能停在上一条"已播放→封面已隐藏"的状态）
         viewHolder.mThumb.setVisibility(View.VISIBLE);
-        // 开始预加载
-        PreloadManager.getInstance(context).addPreloadTask(item.playUrl, position);
+        // 开始预加载（未同意使用须知前不暂存任何视频）
+        if (com.laorendouyin.app.util.LegalState.isDisclaimerAccepted(context)) {
+            PreloadManager.getInstance(context).addPreloadTask(item.playUrl, position);
+        }
         Glide.with(context)
                 .load(item.coverUrl)
                 .placeholder(android.R.color.black)
