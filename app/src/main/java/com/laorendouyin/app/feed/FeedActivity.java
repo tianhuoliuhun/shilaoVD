@@ -780,6 +780,31 @@ public class FeedActivity extends UiActivity {
             }
         }
 
+        // ---- 最后一道兜底：连"看过的"都补不出来时，才放宽方向（2026-10-15）----
+        //
+        // 实测事故：上海话专版的内容天然**全是横屏**（滑稽戏 / 沪剧 / 独脚戏都是老节目），
+        // 竖着拿手机时方向过滤会把整页筛空 → 连补拉 5 页都还是空的 → 用户看到的就是"放不出来"。
+        //
+        // 权衡与上面那条一致：**"混进几条反方向的" 远好于 "一条都没有"**。
+        // 阈值取 2（而不是 MIN_LIST_SIZE）：只在几乎没内容时才放宽，
+        // 正常情况（抖音各频道）方向分流照旧，不受影响。
+        final int MIN_ANY_ORIENTATION = 2;
+        if (accepted.size() < MIN_ANY_ORIENTATION) {
+            int before = accepted.size();
+            for (FeedVideo v : incoming) {
+                if (accepted.size() >= MIN_LIST_SIZE) break;
+                boolean dup = false;
+                for (FeedVideo a : accepted) {
+                    if (a.awemeId != null && a.awemeId.equals(v.awemeId)) { dup = true; break; }
+                }
+                if (!dup) accepted.add(v);
+            }
+            if (accepted.size() > before) {
+                com.laorendouyin.app.util.AppLog.i("feed", "内容太少（" + before
+                        + " 条），放宽方向补到 " + accepted.size() + " 条 —— 宁可混进反方向的，也不能空屏");
+            }
+        }
+
         if (replace && accepted.isEmpty() && keep == null) {
             // 整批都不合适且没有要保活的视频 → 保持现状不空屏，交由调用方补拉
             com.laorendouyin.app.util.AppLog.i("feed", "整批都不合适，保持现状待补拉");

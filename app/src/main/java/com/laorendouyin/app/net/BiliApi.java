@@ -68,6 +68,12 @@ public final class BiliApi {
     /** 单次最多解析这么多条：再多要多等好几轮，得不偿失 */
     private static final int MAX_RESOLVE = 8;
 
+    /**
+     * 单页至少要有这么多「同方向」内容；不足就把另一方向的也带上（见 fetch）。
+     * 取 3 是因为「只有 1~2 条」在上下滑的体验里等于没有。
+     */
+    private static final int MIN_SAME_ORIENTATION = 3;
+
     /** 列表翻几页循环 */
     private static final int MAX_PAGE = 3;
 
@@ -121,12 +127,38 @@ public final class BiliApi {
             throw new IOException("B站源 " + src + " 没有可用条目");
         }
 
-        List<FeedVideo> out = resolveAll(entries, mode);
-        if (out.isEmpty()) {
+        List<FeedVideo> all = resolveAll(entries);
+        if (all.isEmpty()) {
             throw new IOException("B站源 " + src + " 没解析出可播直链（" + entries.size() + " 条都失败）");
         }
-        com.laorendouyin.app.util.AppLog.i("feed", "B站源 " + src + "：解析出 " + out.size() + " 条可播");
-        return out.size() > count ? new ArrayList<>(out.subList(0, count)) : out;
+
+        // 按方向分组：同方向的优先
+        boolean wantLandscape = (mode == DouyinApi.FeedMode.LANDSCAPE);
+        List<FeedVideo> same = new ArrayList<>();
+        List<FeedVideo> other = new ArrayList<>();
+        for (FeedVideo v : all) {
+            boolean known = v.videoWidth > 0 && v.videoHeight > 0;
+            if (!known || v.isLandscape() == wantLandscape) same.add(v);
+            else other.add(v);
+        }
+        if (same.size() >= MIN_SAME_ORIENTATION) {
+            com.laorendouyin.app.util.AppLog.i("feed", "B站源 " + src + "：解析出 " + same.size() + " 条可播");
+            return trim(same, count);
+        }
+
+        // 同方向太少 → 把另一方向的**补在后面**。
+        // 为什么放宽：「上海话」这类内容本身就以横屏老节目为主（滑稽戏 / 沪剧 / 独脚戏），
+        // 若死守方向分流，竖着拿手机时会被筛成「只有 1 条」，用户看到的就是「放不出来」。
+        List<FeedVideo> merged = new ArrayList<>(same);
+        merged.addAll(other);
+        com.laorendouyin.app.util.AppLog.i("feed", "B站源 " + src + "：同方向仅 " + same.size()
+                + " 条，放宽方向补到 " + merged.size() + " 条");
+        return trim(merged, count);
+    }
+
+    /** 取前 count 条 */
+    private static List<FeedVideo> trim(List<FeedVideo> in, int count) {
+        return in.size() > count ? new ArrayList<>(in.subList(0, count)) : in;
     }
 
     // ==================== 四种列表 ====================
@@ -139,7 +171,7 @@ public final class BiliApi {
         if (all.isEmpty()) {
             throw new IOException("B站热门列表为空：" + body.substring(0, Math.min(120, body.length())));
         }
-        return filterOrientation(all, mode);
+        return preferOrientation(all, mode);
     }
 
     /**
@@ -151,15 +183,15 @@ public final class BiliApi {
     private List<Entry> loadRegion(String rid, DouyinApi.FeedMode mode) throws IOException {
         if (!isDigits(rid)) throw new IOException("B站分区 id 必须是数字：" + rid);
         String body = get("/x/web-interface/ranking/v2?rid=" + rid + "&type=all");
-        List<Entry> all = filterOrientation(parseRankingLike(body), mode);
+        List<Entry> all = parseRankingLike(body);
         if (all.isEmpty()) {
             throw new IOException("B站分区 " + rid + " 没有可用内容");
         }
         int windows = Math.max(1, all.size() / MAX_RESOLVE);
         int w = next("region:" + rid + ":" + mode, windows);
-        int from = Math.min(all.size() - 1, w * MAX_RESOLVE);
+        int from = Math.min(Math.max(0, all.size() - MAX_RESOLVE), w * MAX_RESOLVE);
         int to = Math.min(all.size(), from + MAX_RESOLVE);
-        return new ArrayList<>(all.subList(from, to));
+        return preferOrientation(new ArrayList<>(all.subList(from, to)), mode);
     }
 
     /** 关键词搜索。⚠️ 搜索结果**不带 cid / 宽高**，解析时要用 view 接口补（见 {@link #resolveOne}） */
@@ -183,29 +215,37 @@ public final class BiliApi {
         if (!isDigits(tid)) throw new IOException("B站标签 id 必须是数字：" + tid);
         int pn = next("tag:" + tid, MAX_PAGE) + 1;
         String body = get("/x/web-interface/tag/top?tid=" + tid + "&pn=" + pn + "&ps=20");
-        List<Entry> all = filterOrientation(parseTagTop(body), mode);
+        List<Entry> all = preferOrientation(parseTagTop(body), mode);
         if (all.isEmpty()) {
             throw new IOException("B站标签 " + tid + " 没有可用内容");
         }
-        return all.size() > MAX_RESOLVE ? new ArrayList<>(all.subList(0, MAX_RESOLVE)) : all;
+        return all;
     }
 
-    /** 只留下与当前屏幕方向一致的（尺寸缺失的一律留下，交给解析阶段再判） */
-    private static List<Entry> filterOrientation(List<Entry> in, DouyinApi.FeedMode mode) {
+    /**
+     * 同方向的排前面 —— **是排序不是过滤**。
+     *
+     * 反方向的条目仍留在后面，供 fetch 在「同方向内容太少」时补齐；
+     * 但只取前 MAX_RESOLVE 条去解析，所以正常情况下请求还是花在同方向上。
+     * 尺寸缺失的一律当同方向（不拦）。
+     */
+    static List<Entry> preferOrientation(List<Entry> in, DouyinApi.FeedMode mode) {
         boolean wantLandscape = (mode == DouyinApi.FeedMode.LANDSCAPE);
-        List<Entry> out = new ArrayList<>();
+        List<Entry> same = new ArrayList<>();
+        List<Entry> other = new ArrayList<>();
         for (Entry e : in) {
-            if (e.width > 0 && e.height > 0 && ((e.height > e.width) == wantLandscape)) continue;
-            out.add(e);
-            if (out.size() >= MAX_RESOLVE) break;
+            boolean known = e.width > 0 && e.height > 0;
+            if (!known || (e.width > e.height) == wantLandscape) same.add(e);
+            else other.add(e);
         }
-        return out;
+        same.addAll(other);
+        return same.size() > MAX_RESOLVE ? new ArrayList<>(same.subList(0, MAX_RESOLVE)) : same;
     }
 
     // ==================== 解析播放直链 ====================
 
     /** 并发解析直链；单条失败只丢它自己 */
-    private List<FeedVideo> resolveAll(List<Entry> entries, DouyinApi.FeedMode mode) {
+    private List<FeedVideo> resolveAll(List<Entry> entries) {
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(RESOLVE_THREADS, entries.size()));
         try {
             List<Future<FeedVideo>> futures = new ArrayList<>();
@@ -213,7 +253,7 @@ public final class BiliApi {
                 futures.add(pool.submit(new Callable<FeedVideo>() {
                     @Override
                     public FeedVideo call() {
-                        return resolveOne(e, mode);
+                        return resolveOne(e);
                     }
                 }));
             }
@@ -237,7 +277,7 @@ public final class BiliApi {
      *
      * 搜索结果缺 cid 与宽高 —— 先用 `view` 接口补齐（顺便补标题/封面）。
      */
-    private FeedVideo resolveOne(Entry e, DouyinApi.FeedMode mode) {
+    private FeedVideo resolveOne(Entry e) {
         try {
             if (e.cid <= 0) {
                 String q = e.bvid.isEmpty() ? ("aid=" + e.aid) : ("bvid=" + e.bvid);
@@ -254,12 +294,8 @@ public final class BiliApi {
             }
             if (e.cid <= 0) return null;
 
-            // 方向兜底（search 在列表阶段筛不了，只能到这儿才知道）
-            if (e.width > 0 && e.height > 0) {
-                boolean landscape = (e.width > e.height);
-                if (landscape != (mode == DouyinApi.FeedMode.LANDSCAPE)) return null;
-            }
-
+            // ⚠️ 这里**不再按方向过滤**：方向只用来排序与补齐（见 preferOrientation 与 fetch）。
+            //    一刀切会把「天然只有横屏」的内容（老戏曲、老节目）筛成没内容。
             String body = get("/x/player/playurl?bvid=" + e.bvid + "&cid=" + e.cid
                     + "&qn=" + QN_720P + "&fnval=1&fnver=0&fourk=1");
             String url = pickDurl(body);
@@ -406,9 +442,16 @@ public final class BiliApi {
         return u.startsWith("http") ? u : "";
     }
 
-    /** B 站封面给的是 http，统一升成 https（老系统上明文 http 更容易被拦） */
+    /**
+     * 封面地址归一化。
+     *
+     * ⚠️ 搜索结果返回的是**协议相对地址**（`//i2.hdslb.com/...`）—— 不补 scheme 的话，
+     * Glide 会把它当成**本地文件路径**去找，报 `ENOENT (No such file or directory)`，
+     * 表现为「封面永远加载不出来」（v1.22 在 MuMu 上实测踩到）。
+     */
     static String normalizeCover(String pic) {
         if (pic == null || pic.isEmpty()) return "";
+        if (pic.startsWith("//")) return "https:" + pic;
         if (pic.startsWith("http://")) return "https://" + pic.substring("http://".length());
         return pic;
     }

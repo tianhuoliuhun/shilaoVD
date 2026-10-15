@@ -4,6 +4,7 @@ import com.laorendouyin.app.feed.FeedVideo;
 
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -253,5 +254,68 @@ public class BiliApiTest {
         assertFalse(BiliApi.isDigits("211a"));
         assertFalse(BiliApi.isDigits("-1"));
         assertFalse(BiliApi.isDigits("2 11"));
+    }
+
+    // ==================== v1.22 在 MuMu 上实测踩到的两个坑 ====================
+
+    /**
+     * 🔴 封面地址可能是**协议相对**（`//i2.hdslb.com/...`）——
+     * 不补 scheme，Glide 会把它当成**本地文件路径**去找，报 ENOENT，封面永远加载不出来。
+     */
+    @Test
+    public void normalizeCover_handlesProtocolRelativeUrl() {
+        assertEquals("https://i2.hdslb.com/bfs/archive/a.jpg",
+                BiliApi.normalizeCover("//i2.hdslb.com/bfs/archive/a.jpg"));
+        assertEquals("https://i0.hdslb.com/x.jpg",
+                BiliApi.normalizeCover("http://i0.hdslb.com/x.jpg"));
+        assertEquals("https://i0.hdslb.com/x.jpg",
+                BiliApi.normalizeCover("https://i0.hdslb.com/x.jpg"));
+        assertEquals("", BiliApi.normalizeCover(""));
+        assertEquals("", BiliApi.normalizeCover(null));
+    }
+
+    /**
+     * 🔴 方向只做**排序**不做过滤：同方向的排前面，反方向的留在后面 ——
+     * 否则「上海话」这种天然横屏的内容，竖着拿手机时会被筛成没内容（v1.22 实测）。
+     */
+    @Test
+    public void preferOrientation_sortsInsteadOfFiltering() {
+        List<BiliApi.Entry> in = new ArrayList<>();
+        in.add(entry("横1", 1920, 1080));
+        in.add(entry("竖1", 1080, 1920));
+        in.add(entry("横2", 2560, 1440));
+        in.add(entry("竖2", 720, 1280));
+
+        List<BiliApi.Entry> land = BiliApi.preferOrientation(in, DouyinApi.FeedMode.LANDSCAPE);
+        assertEquals("反方向的不能被丢掉", 4, land.size());
+        assertEquals("横1", land.get(0).title);
+        assertEquals("横2", land.get(1).title);
+        assertEquals("竖1", land.get(2).title);
+        assertEquals("竖2", land.get(3).title);
+
+        List<BiliApi.Entry> port = BiliApi.preferOrientation(in, DouyinApi.FeedMode.PORTRAIT);
+        assertEquals("竖1", port.get(0).title);
+        assertEquals("竖2", port.get(1).title);
+        assertEquals("横1", port.get(2).title);
+    }
+
+    /** 尺寸缺失的条目一律当「同方向」放前面，不能因为没尺寸就被扔到最后 */
+    @Test
+    public void preferOrientation_treatsUnknownSizeAsSame() {
+        List<BiliApi.Entry> in = new ArrayList<>();
+        in.add(entry("横", 1920, 1080));
+        in.add(entry("无尺寸", 0, 0));
+        List<BiliApi.Entry> port = BiliApi.preferOrientation(in, DouyinApi.FeedMode.PORTRAIT);
+        assertEquals("无尺寸", port.get(0).title);
+    }
+
+    private static BiliApi.Entry entry(String title, int w, int h) {
+        BiliApi.Entry e = new BiliApi.Entry();
+        e.title = title;
+        e.bvid = "BV" + title;
+        e.cid = 1;
+        e.width = w;
+        e.height = h;
+        return e;
     }
 }
