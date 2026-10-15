@@ -33,7 +33,7 @@ import com.laorendouyin.app.widget.VerticalViewPager;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -776,7 +776,8 @@ public class FeedActivity extends UiActivity {
         int n;
         while ((n = is.read(buf)) > 0) bos.write(buf, 0, n);
         is.close();
-        return new String(bos.toByteArray(), StandardCharsets.UTF_8);
+        // 用 Charset.forName 而非 StandardCharsets：后者是 API 19 才有的类，Android 4.0–4.3 会崩
+        return new String(bos.toByteArray(), Charset.forName("UTF-8"));
     }
 
     // ---------- 沉浸式全屏 ----------

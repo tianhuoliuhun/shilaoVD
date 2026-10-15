@@ -141,7 +141,8 @@ public final class TlsCompat {
         while ((n = is.read(buf)) > 0) {
             bos.write(buf, 0, n);
         }
-        return new String(bos.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+        // 用 Charset.forName 而非 StandardCharsets：后者是 API 19 才有的类，Android 4.0–4.3 会崩
+        return new String(bos.toByteArray(), java.nio.charset.Charset.forName("UTF-8"));
     }
 
     private static X509TrustManager firstX509(TrustManagerFactory tmf) {

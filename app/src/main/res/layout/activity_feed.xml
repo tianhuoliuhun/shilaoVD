@@ -34,8 +34,10 @@
         android:layout_marginTop="16dp"
         android:background="@drawable/bg_info_panel"
         android:orientation="vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="9dp">
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingTop="9dp"
+        android:paddingBottom="9dp">
 
         <TextView
             android:id="@+id/tv_clock_time"
@@ -79,8 +81,10 @@
         android:layout_marginTop="16dp"
         android:background="@drawable/bg_info_panel"
         android:orientation="vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="9dp">
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingTop="9dp"
+        android:paddingBottom="9dp">
 
         <!-- 电量 + 预计可播放时长：放在星期上方；读不到电量时整行 GONE -->
         <TextView
@@ -123,8 +127,10 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:background="@color/scrim"
-        android:paddingHorizontal="@dimen/s4"
-        android:paddingVertical="@dimen/s2"
+        android:paddingLeft="@dimen/s4"
+        android:paddingRight="@dimen/s4"
+        android:paddingTop="@dimen/s2"
+        android:paddingBottom="@dimen/s2"
         android:textColor="@color/accent"
         android:textSize="@dimen/t_caption"
         android:visibility="gone" />
