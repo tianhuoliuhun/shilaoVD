@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
@@ -216,5 +217,49 @@ public class DouyinApiTest {
                 + ",\"play_addr\":{\"uri\":\"v0200fg10000d98f4jno\",\"url_list\":["
                 + "\"https://v11-weba.douyinvod.com/x/" + marker + "\","
                 + "\"https://www.douyin.com/aweme/v1/play/dash/?file_id=" + marker + "&sign=abc\"]}}";
+    }
+
+    /**
+     * `related`（相关视频）**不是频道** —— 它必须走 aweme/related 端点。
+     * 漏了这条判断，它就会被拼上 `tag_id=related` 掉进 channel/feed，白拿一个空结果。
+     */
+    @Test
+    public void relatedSource_isNotTreatedAsChannel() {
+        assertTrue("频道 tag_id 应判为频道", DouyinApi.isChannelSource("300204"));
+        assertFalse("推荐流不是频道", DouyinApi.isChannelSource("recommend"));
+        assertFalse("related 不是频道", DouyinApi.isChannelSource(DouyinApi.SRC_RELATED));
+    }
+
+    /** 相关视频 query：必须带种子 id、翻页游标与签名 */
+    @Test
+    public void buildRelatedQuery_carriesSeedAndSignature() throws Exception {
+        String q = DouyinApi.buildRelatedQuery("7666778335199989034", 10, 2, newSigner());
+        assertTrue("缺 aweme_id: " + q, q.contains("aweme_id=7666778335199989034"));
+        assertTrue("缺 filterGid: " + q, q.contains("filterGid=7666778335199989034"));
+        assertTrue("缺 count: " + q, q.contains("count=10"));
+        assertTrue("缺 refresh_index: " + q, q.contains("refresh_index=2"));
+        assertTrue("缺签名: " + q, q.contains("&a_bogus="));
+    }
+
+    /**
+     * 种子只挑与当前方向一致的视频；一条都不符合时**保留旧种子**
+     * （不能清空 —— 否则横竖来回切换会反复把种子弄丢，related 就永久失效了）。
+     */
+    @Test
+    public void rememberSeed_picksSameOrientationAndKeepsOldOnMismatch() {
+        List<FeedVideo> mixed = Arrays.asList(
+                new FeedVideo("横", "http://a", "", "id-land", "", 1920, 1080),
+                new FeedVideo("竖", "http://b", "", "id-portrait", "", 1080, 1920));
+
+        DouyinApi.rememberSeed(DouyinApi.FeedMode.LANDSCAPE, mixed);
+        assertEquals("id-land", DouyinApi.seedFor(DouyinApi.FeedMode.LANDSCAPE));
+
+        DouyinApi.rememberSeed(DouyinApi.FeedMode.PORTRAIT, mixed);
+        assertEquals("id-portrait", DouyinApi.seedFor(DouyinApi.FeedMode.PORTRAIT));
+
+        // 全是反方向的：旧种子必须留着
+        DouyinApi.rememberSeed(DouyinApi.FeedMode.LANDSCAPE,
+                Arrays.asList(new FeedVideo("竖", "http://c", "", "id-p2", "", 1080, 1920)));
+        assertEquals("id-land", DouyinApi.seedFor(DouyinApi.FeedMode.LANDSCAPE));
     }
 }

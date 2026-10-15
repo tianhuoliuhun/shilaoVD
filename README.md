@@ -85,7 +85,7 @@
 | 版本 | 包名 | 内容 |
 |---|---|---|
 | **普通版** | `com.laorendouyin.app` | 抖音「推荐」流（原样） |
-| **老人专版** | `com.laorendouyin.app.laoren` | **推荐流 + 三农 / 音乐 / 美食 / 动物 / 亲子 / 旅行 六个频道轮询混合** |
+| **老人专版** | `com.laorendouyin.app.laoren` | **推荐流 + 三农 / 音乐 / 美食 / 动物 / 亲子 / 旅行 六个频道 + 相关视频 轮询混合** |
 | **17 个频道版** | `com.laorendouyin.app.<频道>` | 各自只刷一个频道 |
 
 **老人专版的频道**：三农（乡村生活/赶海/地方美食/非遗，画面导向）、音乐（经典老歌，
@@ -104,11 +104,23 @@
 
 内容**不是靠客户端筛选**，而是直接向抖音要那个频道（`/aweme/v1/web/channel/feed/`）。
 
-**内容源是一个可配置的列表**（`app/build.gradle` 里各变体的 `CHANNEL_TAG_ID`，逗号分隔）：
+**内容源是一个可配置的列表**（`app/build.gradle` 里各变体的 `CHANNEL_TAG_ID`，逗号分隔）。
+每一项要么是频道 tag_id，要么是特殊值 —— `recommend`（推荐流）、`related`（相关视频）：
 
 - `""` → 只有推荐流（普通版）
 - `"300219"` → 只刷一个频道
-- `"recommend,300219,300209,300204,300220,300217,300221"` → 推荐流 + 六个频道**轮询混合**（老人专版）
+- `"recommend,300219,300209,300204,300220,300217,300221,related"`
+  → 推荐流 + 六个频道 + **相关视频** 轮询混合（老人专版，v1.19 起）
+
+**「相关视频」是什么**：拿刚看过的那条视频的 `aweme_id` 当种子，向
+`/aweme/v1/web/aweme/related/` 要同类内容。**游客态可用、每次 10~12 条、100% 带直链**，
+是目前除频道流之外第二条能「定向内容」的通道（不需要登录）。
+
+> ⚠️ 它返回的是**混合方向**（竖/横大致各半，用同方向种子也只是略好），所以只适合当
+> 「内容不够时的补充」 —— 方向分流后一次大约剩 5~8 条可用；别指望它单独撑起一条流。
+> 它还有一个「没有种子就用不了」的特点（App 刚启动时），代码里对此**不记失败、不进冷却**。
+> 探测记录：[probe/probe_related.js](probe/probe_related.js)、
+> [probe/probe_related_orientation.js](probe/probe_related_orientation.js)。
 
 **所有版本都执行"方向分流"**（竖着拿只刷竖屏、横着拿只刷横屏）。
 
@@ -263,7 +275,10 @@ Android 4.4 模拟器里那个纯软件解码器）直接报 `NoSupport`。所�
 
 视频内容取自抖音 Web 端（`www.douyin.com`）的公开接口，**全程游客身份**（不登录、不采集任何账号信息）：
 
-- 信息流接口：`/aweme/v1/web/tab/feed/`
+- 信息流接口（三种，按内容源轮询）：
+  - 推荐流：`/aweme/v1/web/tab/feed/`
+  - 频道流：`/aweme/v1/web/channel/feed/`（带 `tag_id`，17 个固定频道）
+  - 相关视频：`/aweme/v1/web/aweme/related/`（带 `aweme_id` 种子，用于老人专版）
 - 风控签名：`a_bogus` —— App 内用 Rhino 执行 `douyin_sign` 的 JS 实时计算
 - 两套参数决定内容方向（实测结论）：
   - PC 参数（`aid=6383 + channel_pc_web + device_platform=webapp`）→ **93% 是横屏视频**

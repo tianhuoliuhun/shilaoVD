@@ -72,4 +72,45 @@ public class BatteryEstimatorTest {
         assertTrue(s, s.startsWith("电量 90% · 约可播"));
         assertEquals("电量 90% · 约可播 7小时30分", s);
     }
+
+    /** 数字区间：电量百分比（含 % 号）与时长里的数字都要被找出来 */
+    @Test
+    public void digitSpans_findsPercentAndTimeNumbers() {
+        String s = "电量 78% · 约可播 5小时20分";
+        java.util.List<int[]> r = BatteryEstimator.digitSpans(s);
+        assertEquals(3, r.size());
+        assertEquals("78%", slice(s, r.get(0)));
+        assertEquals("5", slice(s, r.get(1)));
+        assertEquals("20", slice(s, r.get(2)));
+    }
+
+    /** 只有分钟、充电中、电量不足这几种形态也不能漏或错 */
+    @Test
+    public void digitSpans_handlesShortForms() {
+        String s = "电量 9% · 约可播 45分钟";
+        java.util.List<int[]> r = BatteryEstimator.digitSpans(s);
+        assertEquals(2, r.size());
+        assertEquals("9%", slice(s, r.get(0)));
+        assertEquals("45", slice(s, r.get(1)));
+        assertEquals(1, BatteryEstimator.digitSpans("电量 60% · 充电中").size());
+        assertEquals(1, BatteryEstimator.digitSpans("电量 0% · 电量不足").size());
+    }
+
+    /** 区间必须能安全切回原文（左闭右开、不越界），且空/无数字输入不炸 */
+    @Test
+    public void digitSpans_rangesAreSafe() {
+        String s = "电量 100% · 约可播 12小时59分";
+        for (int[] r : BatteryEstimator.digitSpans(s)) {
+            assertTrue(String.valueOf(r[0]), r[0] >= 0);
+            assertTrue(String.valueOf(r[1]), r[1] <= s.length());
+            assertTrue("区间必须非空", r[0] < r[1]);
+        }
+        assertEquals(0, BatteryEstimator.digitSpans("").size());
+        assertEquals(0, BatteryEstimator.digitSpans("充电中").size());
+        assertEquals(0, BatteryEstimator.digitSpans(null).size());
+    }
+
+    private static String slice(String s, int[] r) {
+        return s.substring(r[0], r[1]);
+    }
 }

@@ -93,8 +93,8 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="3dp"
             android:includeFontPadding="false"
-            android:textColor="#D9FFFFFF"
-            android:textSize="15sp"
+            android:textColor="#F2FFFFFF"
+            android:textSize="20sp"
             android:visibility="gone"
             tools:ignore="HardcodedText" />
 

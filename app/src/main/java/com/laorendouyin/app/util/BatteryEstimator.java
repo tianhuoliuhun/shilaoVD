@@ -107,6 +107,32 @@ public final class BatteryEstimator {
         return String.format(Locale.US, "电量 %d%% · 约可播 %s", percent, when);
     }
 
+    /**
+     * 找出文本里「数字串」的起止区间（连续数字，以及紧跟其后的一个 `%`）。
+     *
+     * 供 UI 层把数字单独放大用 —— 老人隔着距离看，最需要一眼看清的就是"还剩多少电"。
+     * 逻辑放在这个纯 Java 类里，是为了能在 JVM 上单测（真正 setSpan 的代码在 FeedActivity）。
+     *
+     * @return 每个元素是 {start, end}（左闭右开），按出现顺序；文本为 null 时返回空表
+     */
+    public static List<int[]> digitSpans(String text) {
+        List<int[]> out = new ArrayList<>();
+        if (text == null) return out;
+        int n = text.length();
+        int i = 0;
+        while (i < n) {
+            if (!Character.isDigit(text.charAt(i))) {
+                i++;
+                continue;
+            }
+            int start = i;
+            while (i < n && Character.isDigit(text.charAt(i))) i++;
+            if (i < n && text.charAt(i) == '%') i++;   // 百分号跟数字一起放大
+            out.add(new int[]{start, i});
+        }
+        return out;
+    }
+
     private long[] last() {
         return mSamples.get(mSamples.size() - 1);
     }

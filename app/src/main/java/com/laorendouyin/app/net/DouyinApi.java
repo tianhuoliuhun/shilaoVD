@@ -207,6 +207,20 @@ public final class DouyinApi {
      */
     public static final String CHANNEL_TAG_ID = com.laorendouyin.app.BuildConfig.CHANNEL_TAG_ID;
 
+    /**
+     * 特殊源名：**「相关视频」**。
+     *
+     * 它不是频道 tag_id，含义是「用最近看过的那条视频作种子，问抖音要同类内容」
+     * （`/aweme/v1/web/aweme/related/`）。2026-10-15 实测（probe/probe_related.js）：
+     * 游客态可用、每次 10~12 条、**带直链率 100%**、`refresh_index` 递增能翻页换内容。
+     *
+     * ⚠️ 它返回的是**混合方向**（竖/横大致各半，用同方向种子也只是略好），
+     * 所以只适合当"内容不够时的补充"，别指望它单独撑起一条流。
+     *
+     * 用法：在 `app/build.gradle` 的 `CHANNEL_TAG_ID` 里按逗号加一项 `related`。
+     */
+    public static final String SRC_RELATED = "related";
+
     /** 解析后的源列表（空数组 = 只有推荐流） */
     private static final String[] SOURCES = splitSources(CHANNEL_TAG_ID);
 
@@ -216,6 +230,24 @@ public final class DouyinApi {
      */
     private static final FeedSourcePicker sPicker = new FeedSourcePicker(
             SOURCES.length > 0 ? SOURCES : new String[]{"recommend"});
+
+    /**
+     * 每个方向「最近看到的、可当种子」的视频 id —— `related` 源的输入。
+     * 拉流在后台线程、状态又要跨请求存活，所以用并发容器。
+     */
+    private static final Map<FeedMode, String> sSeedByMode = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** `related` 这次没有种子（App 刚启动、还没看到任何视频）—— 不算失败，不该让它进冷却 */
+    static final class NoSeedException extends IOException {
+        NoSeedException() {
+            super("还没有可当种子的视频，related 源暂不可用");
+        }
+    }
+
+    /** 仅供单测：读某个方向当前的种子 */
+    static String seedFor(FeedMode mode) {
+        return sSeedByMode.get(mode);
+    }
 
     private static String[] splitSources(String cfg) {
         if (cfg == null || cfg.trim().isEmpty()) return new String[0];
@@ -232,9 +264,12 @@ public final class DouyinApi {
         return SOURCES.length > 0;
     }
 
-    /** 该源是否走频道端点（false = 走推荐流） */
-    private static boolean isChannelSource(String src) {
-        return !"recommend".equals(src);
+    /**
+     * 该源是不是**频道 tag_id**（false = 走推荐流或相关流的端点）。
+     * ⚠️ `related` 不是频道 —— 漏了它就会被拼上 `tag_id=related` 掉进 channel/feed。
+     */
+    static boolean isChannelSource(String src) {
+        return !"recommend".equals(src) && !SRC_RELATED.equals(src);
     }
 
     /**
@@ -257,6 +292,10 @@ public final class DouyinApi {
                 List<FeedVideo> list = requestFeed(count, idx, mode, src);
                 sPicker.markOk(src);
                 return list;
+            } catch (NoSeedException e) {
+                // App 刚启动 / 还没拿到任何视频 —— related 这次没种子可用。
+                // ⚠️ 这不是它的错，**绝不能 markFailed**（否则会被无谓冷却 10 分钟）
+                com.laorendouyin.app.util.AppLog.i("feed", "相关视频暂无种子，跳过");
             } catch (IOException e) {
                 sPicker.markFailed(src, System.currentTimeMillis());
                 com.laorendouyin.app.util.AppLog.i("feed", "内容源 " + src + " 失败，换下一个：" + e.getMessage());
@@ -268,11 +307,21 @@ public final class DouyinApi {
 
     /** 请求某一个源的一页内容；失败抛 IOException，由 fetchFeed 决定是否换源 */
     private List<FeedVideo> requestFeed(int count, int idx, FeedMode mode, String src) throws IOException {
+        boolean related = SRC_RELATED.equals(src);
         boolean channel = isChannelSource(src);
         String tagId = channel ? src : "";
-        String srcName = channel ? "频道" + src : "推荐";
-        String query = buildFeedQuery(count, idx, mode, signer, tagId);
-        String path = channel ? "/aweme/v1/web/channel/feed/" : "/aweme/v1/web/tab/feed/";
+        String srcName = related ? "相关视频" : (channel ? "频道" + src : "推荐");
+        String query;
+        String path;
+        if (related) {
+            String seed = sSeedByMode.get(mode);
+            if (seed == null || seed.isEmpty()) throw new NoSeedException();
+            query = buildRelatedQuery(seed, count, idx, signer);
+            path = "/aweme/v1/web/aweme/related/";
+        } else {
+            query = buildFeedQuery(count, idx, mode, signer, tagId);
+            path = channel ? "/aweme/v1/web/channel/feed/" : "/aweme/v1/web/tab/feed/";
+        }
         com.laorendouyin.app.util.AppLog.i("feed", "内容源：" + srcName
                 + (SOURCES.length > 1 ? "（共 " + SOURCES.length + " 个源轮询）" : ""));
         Request req = new Request.Builder()
@@ -288,6 +337,7 @@ public final class DouyinApi {
             if (list.isEmpty()) {
                 throw new IOException("feed 为空，status=" + body.substring(0, Math.min(120, body.length())));
             }
+            rememberSeed(mode, list);
             return list;
         }
     }
@@ -321,6 +371,49 @@ public final class DouyinApi {
         }
         String ab = signer.makeABogus(q.toString());
         return q + "&a_bogus=" + urlEncode(ab);
+    }
+
+    /**
+     * 构造「相关视频」query（含 a_bogus）；纯函数。
+     *
+     * ⚠️ 这里**故意不带方向三件套**（aid / channel / device_platform 保持 baseDeviceParams 默认）——
+     * 2026-10-15 的探测就是在这套默认参数下成功的（probe/probe_related_orientation.js），
+     * 换成移动端那套**没有验证过**，别顺手"统一"。
+     *
+     * @param awemeId 种子视频 id（由 {@link #rememberSeed} 维护）
+     */
+    public static String buildRelatedQuery(String awemeId, int count, int refreshIndex, Signer signer) {
+        Map<String, String> p = baseDeviceParams(VER_COMMON_CODE, VER_COMMON_NAME);
+        p.put("aweme_id", awemeId == null ? "" : awemeId);
+        p.put("filterGid", awemeId == null ? "" : awemeId);
+        p.put("count", String.valueOf(count));
+        p.put("refresh_index", String.valueOf(refreshIndex));
+        StringBuilder q = new StringBuilder();
+        for (Map.Entry<String, String> e : p.entrySet()) {
+            if (q.length() > 0) q.append('&');
+            q.append(e.getKey()).append('=').append(e.getValue());
+        }
+        String ab = signer.makeABogus(q.toString());
+        return q + "&a_bogus=" + urlEncode(ab);
+    }
+
+    /**
+     * 记住本次结果里**符合当前方向**的最后一条，作为下次 related 的种子。
+     *
+     * 挑同方向是因为 related 返回混合方向，同方向种子能略微拉高同方向占比；
+     * 一条都不符合时**保留旧种子**（清空会导致横竖来回切时反复失去种子、related 永久失效）。
+     */
+    static void rememberSeed(FeedMode mode, List<FeedVideo> list) {
+        if (list == null || list.isEmpty()) return;
+        boolean wantLandscape = (mode == FeedMode.LANDSCAPE);
+        for (int i = list.size() - 1; i >= 0; i--) {
+            FeedVideo v = list.get(i);
+            if (v == null || v.awemeId.isEmpty()) continue;
+            if (v.videoWidth <= 0 || v.videoHeight <= 0) continue;   // 没尺寸当不了种子
+            if (v.isLandscape() != wantLandscape) continue;
+            sSeedByMode.put(mode, v.awemeId);
+            return;
+        }
     }
 
     /** 解析 feed JSON → FeedVideo 列表；纯函数 */

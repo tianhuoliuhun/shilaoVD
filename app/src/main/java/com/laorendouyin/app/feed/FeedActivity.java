@@ -966,6 +966,23 @@ public class FeedActivity extends UiActivity {
         }
     }
 
+    /**
+     * 把电量那一行里的**数字**单独放大加粗。
+     *
+     * 整行字号已在布局里调大（15sp -> 20sp）；这里再对数字（含 % 号）乘 1.3 并加粗，
+     * 让"还剩多少电、还能看多久"成为信息栏里第一眼被看到的内容。
+     */
+    private CharSequence emphasizeDigits(String text) {
+        android.text.SpannableString sp = new android.text.SpannableString(text);
+        for (int[] r : com.laorendouyin.app.util.BatteryEstimator.digitSpans(text)) {
+            sp.setSpan(new android.text.style.RelativeSizeSpan(1.3f), r[0], r[1],
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sp.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), r[0], r[1],
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return sp;
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
