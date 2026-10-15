@@ -940,5 +940,7 @@ public class FeedActivity extends UiActivity {
         super.onDestroy();
         if (mVideoView != null) mVideoView.release();
         if (mPreloadManager != null) mPreloadManager.removeAllPreloadTask();
+        // 退出即清空视频缓存：播放用的临时片段不应在设备上留下副本（见 ProxyVideoCacheManager.clearAll）
+        if (isFinishing()) com.laorendouyin.app.cache.ProxyVideoCacheManager.clearAll(this);
     }
 }

@@ -89,9 +89,47 @@ public class ProxyVideoCacheManager {
                         return DouyinApi.playHeaders();
                     }
                 })
-                //缓存路径，不设置默认在sd_card/Android/data/[app_package_name]/cache中
-//                .cacheDirectory()
+                // 缓存放在应用私有的内部 cache 目录，而不是外部存储（默认位置在 SD 卡上，
+                // 退出后残留、用户也能在文件管理器里翻到）。退出时由 clearAll 整体清空。
+                .cacheDirectory(cacheDir(context))
                 .build();
+    }
+
+    private static final String CACHE_DIR_NAME = "video_cache";
+
+    private static File cacheDir(Context context) {
+        return new File(context.getCacheDir(), CACHE_DIR_NAME);
+    }
+
+    /**
+     * 清空全部视频缓存，并关闭本地代理（应用退出时调用）。
+     *
+     * 法律风险相关：本软件只为播放而暂存视频片段，播放结束就不应该留下任何副本。
+     * 关闭代理后 {@link #getProxy} 会在下次需要时重建，不影响后续使用。
+     */
+    public static synchronized void clearAll(Context context) {
+        try {
+            if (sharedProxy != null) {
+                sharedProxy.shutdown();
+                sharedProxy = null;
+            }
+        } catch (Throwable e) {
+            AppLog.i("cache", "关闭代理失败（忽略）：" + e);
+        }
+        try {
+            deleteRecursive(cacheDir(context));
+        } catch (Throwable e) {
+            AppLog.i("cache", "清空缓存失败（忽略）：" + e);
+        }
+    }
+
+    private static void deleteRecursive(File f) {
+        if (f == null || !f.exists()) return;
+        File[] kids = f.listFiles();
+        if (kids != null) {
+            for (File k : kids) deleteRecursive(k);
+        }
+        f.delete();
     }
 
     /**
