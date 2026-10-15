@@ -26,8 +26,8 @@ android {
         // minSdk 14 必需：Android 5.0（API 20）及以下没有系统级 multidex，
         // 方法数超过 64K 就必须显式开启（配合 DyApp 里的 MultiDex.install）
         multiDexEnabled true
-        versionCode 24
-        versionName '1.23'
+        versionCode 25
+        versionName '1.24'
     }
 
     // ============================================================
@@ -77,7 +77,7 @@ android {
         shanghai {
             dimension 'content'
             applicationIdSuffix '.shanghai'
-            buildConfigField 'String', 'CHANNEL_TAG_ID', '"bili:search:滑稽戏,bili:search:沪剧,bili:search:上海滑稽,bili:search:上海闲话,bili:search:上海话"'
+            buildConfigField 'String', 'CHANNEL_TAG_ID', '"bili:search:滑稽戏,bili:search:沪剧,bili:search:上海滑稽,bili:search:上海闲话,bili:search:上海话,bili:search:上海嘎讪胡"'
             buildConfigField 'String', 'CHANNEL_NAME', '"上海话"'
         }
 
