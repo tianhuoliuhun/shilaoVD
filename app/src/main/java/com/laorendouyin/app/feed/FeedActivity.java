@@ -149,8 +149,13 @@ public class FeedActivity extends UiActivity {
             + "3. 本项目与抖音、哔哩哔哩官方都没有任何关系，不是它们的官方应用。\n\n"
             + "4. 播放时会在本机临时保存视频片段，退出时自动清空；"
             + "本软件不提供保存、下载或分享视频的功能。\n\n"
-            + "5. 请遵守当地法律法规与平台服务条款，相关后果由使用者自行承担。\n\n"
-            + "6. 请在下载后 24 小时内删除本软件。";
+            // ⚠️ 第 5 条是 2026-10-19 补的：a_bogus / Referer 这些"反爬参数"此前在声明里
+            // 一个字都没提 —— 而它们恰恰是第三方最容易挑刺的地方。口径与 README
+            // 「版权与使用声明 · 三、关于接口参数」保持一致，改动时两边一起改。
+            + "5. 读取公开内容所需的接口参数（含风控签名、来源标识）在本机计算，"
+            + "仅用于按平台 Web 端同样的方式读取公开内容，不用于绕过任何付费墙或权限校验。\n\n"
+            + "6. 请遵守当地法律法规与平台服务条款，相关后果由使用者自行承担。\n\n"
+            + "7. 请在下载后 24 小时内删除本软件。";
 
     private boolean isDisclaimerAccepted() {
         return com.laorendouyin.app.util.LegalState.isDisclaimerAccepted(this);
@@ -166,14 +171,14 @@ public class FeedActivity extends UiActivity {
                 .setTitle("使用须知")
                 .setMessage(DISCLAIMER_TEXT)
                 .setCancelable(false)
-                .setPositiveButton("我同意", new android.content.DialogInterface.OnClickListener() {
+                .setPositiveButton("我同意，开始看视频", new android.content.DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(android.content.DialogInterface dialog, int which) {
                         com.laorendouyin.app.util.LegalState.acceptDisclaimer(FeedActivity.this);
                         startPlay(0);
                     }
                 })
-                .setNegativeButton("不同意并退出", new android.content.DialogInterface.OnClickListener() {
+                .setNegativeButton("不同意，退出", new android.content.DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(android.content.DialogInterface dialog, int which) {
                         finish();

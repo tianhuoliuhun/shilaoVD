@@ -314,6 +314,29 @@ Android 4.4 模拟器里那个纯软件解码器）直接报 `NoSupport`。所�
 | [douyin_sign](https://github.com/ylcangel/douyin_sign) | `a_bogus` 签名的 JS 实现（`assets/sign/`，App 内用 Rhino 执行） | Apache-2.0 |
 | [DouYin_Spider](https://github.com/cv-cat/DouYin_Spider) | 接口知识参考（未复制代码） | 无 |
 
+### 第三方依赖与许可证
+
+除上表（源码内嵌 / 算法参考）外，本仓库通过 Gradle 引入的二进制依赖及其许可证：
+
+| 依赖 | 用在哪 | 许可证 |
+|---|---|---|
+| `androidx.appcompat` / `recyclerview` / `multidex` | UI / 列表 / 老系统多 dex | Apache-2.0 |
+| `com.google.android.material` | 弹窗等少量控件 | Apache-2.0 |
+| `com.squareup.okhttp3:okhttp` | 全部网络请求 | Apache-2.0 |
+| `com.google.code.gson:gson` | JSON 解析 | Apache-2.0 |
+| `com.github.bumptech.glide:glide` | 封面图加载 | BSD / MIT / Apache-2.0 |
+| `org.mozilla:rhino` | 在 App 内执行 `a_bogus` 签名 JS | **MPL-2.0**（或 GPL-2.0+，二选一）|
+| `org.conscrypt:conscrypt-android` | 老系统（API<21）的 TLS 兜底 | Apache-2.0 |
+| `com.google.android.exoplayer` | 播放内核之一 | Apache-2.0 |
+| AndroidVideoCache（`lib/dkplayer-videocache`） | 本地缓存代理 | Apache-2.0 |
+
+> ⚠️ `Rhino` 是 **MPL-2.0 / GPL-2.0+ 双许可**。MPL 是「文件级」弱 copyleft：
+> 单独分发或修改 Rhino 自身的源码文件时才触发开源义务；本项目只是**链接使用它**（未修改其源码），
+> 不改变本项目的许可选择。若你选择以 GPL-2.0+ 使用 Rhino，则整体需遵循 GPL-2.0。
+> 本项目整体采用 GPL-3.0，与两者都兼容。
+
+各依赖的完整许可证文本请在对应上游仓库查阅；`LICENSE` 文件仅覆盖本项目自身的代码。
+
 ### 相对基座「腕上音符」改了什么
 
 **删掉的**
@@ -429,3 +452,21 @@ keyPassword=...
 - **请在下载后 24 小时内删除本软件**；
 - 本项目与抖音官方/bilibili官方**没有任何关系**，不是官方应用，也未被官方授权或认可；
 - 请遵守当地法律法规与平台服务条款，因使用本项目产生的一切后果由使用者自行承担。
+
+### 三、关于接口参数
+
+本项目以**游客身份**读取抖音 / 哔哩哔哩 **Web 端的公开接口**，与浏览器访问同一批地址。
+过程中会在本机计算两类参数：
+
+- **风控签名**（抖音 `a_bogus`）：Web 端页面同样会计算并带上它，否则接口直接拒绝。
+  App 内用 Rhino 执行开源实现 `douyin_sign` 的 JS 实时计算，**不向任何第三方服务器发送请求**。
+- **来源标识**（`Referer`）：CDN 校验来源，不带就一律 403。
+
+这些参数的用途**仅限于按平台 Web 端同样的方式读取公开内容**，
+本项目**不用它们**做以下任何一件事：
+
+- 绕过任何付费墙、会员校验或权限机制；
+- 访问任何需要登录才能查看的内容（全程游客身份，没有账号体系）；
+- 批量抓取、下载、导出或再分发任何内容。
+
+App 首次启动时会展示包含同一条口径的使用须知，需用户明确同意后才开始播放。
