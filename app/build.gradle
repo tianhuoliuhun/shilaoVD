@@ -10,7 +10,7 @@ if (hasKeystore) {
     keystoreProps.load(new FileInputStream(keystorePropsFile))
 }
 
-// myDVQ —— 极简上下滑短视频播放器（只有「推荐」一条流、画面零文字零按钮）
+// shilaoVD —— 极简上下滑短视频播放器（只有「推荐」一条流、画面零文字零按钮）
 //
 // 相对原基座（腕上音符）删掉的构建内容：
 //   - devdiag 变体（"真机验证专用"构建，随它的诊断/登录态需求一起移除）

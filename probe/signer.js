@@ -4,7 +4,7 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const SIGN_DIR = 'D:/Projects/myDVQ/.base/wanshang-yinfu/app/src/main/assets/sign';
+const SIGN_DIR = '../.base/wanshang-yinfu/app/src/main/assets/sign';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36';
 
 function createSigner(uaOverride) {

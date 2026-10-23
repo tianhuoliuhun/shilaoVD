@@ -3,7 +3,7 @@ package com.laorendouyin.app.feed;
 // 源自 DKVideoPlayer demo 的 TikTok2Activity（Apache-2.0，Copyright Doikki）——
 // 官方推荐的仿抖音实现：VerticalViewPager 上下滑 + AndroidVideoCache 预加载 + 单播放器复用。
 //
-// myDVQ 改造（对照原基座「腕上音符」的删减清单）：
+// shilaoVD 改造（对照原基座「腕上音符」的删减清单）：
 //   删：点赞 / 收藏 / 评论 / 分享 / 作者主页（原走 WebView 引擎）
 //   删：全屏开关、双指缩放、手动旋转、全屏手势层
 //   删：暂停与进度条（点画面什么都不发生）
@@ -290,7 +290,7 @@ public class FeedActivity extends UiActivity {
 
     /**
      * 懒建 DouyinApi（签名 JS + 两个方向各自的翻页游标）；只在后台线程调。
-     * myDVQ：**不注入任何登录态** —— 全程游客身份，只靠 ttwid + a_bogus。
+     * shilaoVD：**不注入任何登录态** —— 全程游客身份，只靠 ttwid + a_bogus。
      */
     private DouyinApi ensureApi() throws Exception {
         if (mApi != null) return mApi;

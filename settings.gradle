@@ -25,7 +25,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "myDVQ"
+rootProject.name = "shilaoVD"
 include ':app'
 
 // DKVideoPlayer（Apache-2.0，源码内嵌三模块，避开 jitpack；AGP 8.7 适配构建脚本在各 lib/ 目录）

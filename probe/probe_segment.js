@@ -4,7 +4,7 @@
 const fs = require('fs');
 const { createSigner, baseParams, getTtwid, UA } = require('./signer.js');
 
-const OUT = 'D:/Projects/myDVQ/probe/segment.json';
+const OUT = './segment.json';
 const out = { probes: [] };
 
 function say(s) { process.stdout.write(s.replace(/[^\x20-\x7e\n]/g, '?') + '\n'); }

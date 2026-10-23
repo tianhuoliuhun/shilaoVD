@@ -3,7 +3,7 @@ package com.laorendouyin.app.net;
 // DouyinApi 纯函数单测（离线）：解析真实接口响应样本 + query 构造含签名 + **两个方向的参数差异**。
 // 联网冒烟测试见 FeedFetchTest（默认跳过，-Dnetwork.test=true 时执行）。
 //
-// myDVQ 删减：作者头像相关断言随"头像不再显示"一起移除。
+// shilaoVD 删减：作者头像相关断言随"头像不再显示"一起移除。
 
 import com.laorendouyin.app.feed.FeedVideo;
 import com.laorendouyin.app.sign.Signer;
@@ -100,7 +100,7 @@ public class DouyinApiTest {
     /**
      * 选档：H.264 优先、同档取最低码率；HEVC 一律不选（低端 SoC 无硬解）。
      *
-     * myDVQ 的默认画质档是 1（平衡 = 720p 优先，原基座手表端是 0 = 540p）。
+     * shilaoVD 的默认画质档是 1（平衡 = 720p 优先，原基座手表端是 0 = 540p）。
      * 本条用例显式设定档位，不依赖全局默认值。
      */
     @Test

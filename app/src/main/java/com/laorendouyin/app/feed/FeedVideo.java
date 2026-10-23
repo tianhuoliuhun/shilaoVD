@@ -1,7 +1,7 @@
 package com.laorendouyin.app.feed;
 
 /**
- * Feed 视频模型（myDVQ 极简版）。
+ * Feed 视频模型（shilaoVD 极简版）。
  *
  * 只保留「播一条视频」真正需要的字段：标题、播放地址、封面、id、作者名，以及**视频宽高**。
  *

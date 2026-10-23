@@ -1,7 +1,7 @@
 package com.laorendouyin.app.feed;
 
 // 源自 DKVideoPlayer demo 的 Tiktok2Adapter（Apache-2.0，Copyright Doikki）。
-// myDVQ 改造：**删除全部互动**（点赞/评论/收藏/分享/作者头像）与标题文字，
+// shilaoVD 改造：**删除全部互动**（点赞/评论/收藏/分享/作者头像）与标题文字，
 // item 里只剩「播放器容器 + 封面」，视图复用池与预加载任务绑定照旧保留。
 // License: Apache-2.0（见 lib/LICENSE-DKVideoPlayer.txt）
 

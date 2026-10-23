@@ -3,7 +3,7 @@
 const fs = require('fs');
 const { createSigner, baseParams, getTtwid, UA } = require('./signer.js');
 
-const OUT = 'D:/Projects/myDVQ/probe/landscape.json';
+const OUT = './landscape.json';
 function say(s) { process.stdout.write(s.replace(/[^\x20-\x7e\n]/g, '?') + '\n'); }
 
 async function fetchJson(ctx, cookie, pathname, params) {

@@ -1,6 +1,6 @@
 package com.laorendouyin.app.ui;
 
-// myDVQ 极简 Activity 基类。
+// shilaoVD 极简 Activity 基类。
 //
 // 原基座（腕上音符）这里做了两件事：按用户设置应用全局字体/界面缩放（UiScale）、
 // 以及圆屏边距内缩（Settings）。这两样都随"设置页"一起移除了 ——

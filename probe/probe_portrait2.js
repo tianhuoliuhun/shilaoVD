@@ -3,7 +3,7 @@
 const fs = require('fs');
 const { createSigner, baseParams, getTtwid, UA } = require('./signer.js');
 
-const OUT = 'D:/Projects/myDVQ/probe/portrait2.json';
+const OUT = './portrait2.json';
 function say(s) { process.stdout.write(s.replace(/[^\x20-\x7e\n]/g, '?') + '\n'); }
 
 function classify(list) {

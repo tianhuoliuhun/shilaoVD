@@ -1,6 +1,6 @@
 # 开源同类项目调研报告
 
-> 目标：为 myDVQ（极简上下滑抖音播放器，只留「推荐 + 移动推荐」，去掉暂停/字幕/弹幕/点赞/评论/分享/设置）
+> 目标：为 shilaoVD（极简上下滑抖音播放器，只留「推荐 + 移动推荐」，去掉暂停/字幕/弹幕/点赞/评论/分享/设置）
 > 寻找可直接借鉴或复用的开源实现
 > 日期：2026-10-13
 
@@ -65,7 +65,7 @@
 OkHttp + Gson + Rhino + DKVideoPlayer；`compileSdk 36`、`minSdk 21`、JDK 17/21。
 
 ### ⚠️ 许可证警告
-GPL-3.0 有**传染性**：如果你的 myDVQ 要开源，没问题（同许可即可）；如果要**闭源分发**，不能直接复制它的代码，只能"读思路、自己写"。相对地，`douyin_sign`(Apache-2.0)、`DKVideoPlayer`(Apache-2.0)、`VerticalViewPager`(Apache-2.0) 都可以放心用（Apache 只需保留声明）。
+GPL-3.0 有**传染性**：如果你的 shilaoVD 要开源，没问题（同许可即可）；如果要**闭源分发**，不能直接复制它的代码，只能"读思路、自己写"。相对地，`douyin_sign`(Apache-2.0)、`DKVideoPlayer`(Apache-2.0)、`VerticalViewPager`(Apache-2.0) 都可以放心用（Apache 只需保留声明）。
 
 ---
 

@@ -3,7 +3,7 @@
 const fs = require('fs');
 const { createSigner, baseParams, getTtwid, UA } = require('./signer.js');
 
-const OUT = 'D:/Projects/myDVQ/probe/tagid.json';
+const OUT = './tagid.json';
 function say(s) { process.stdout.write(s.replace(/[^\x20-\x7e\n]/g, '?') + '\n'); }
 
 async function probe(ctx, cookie, label, tagId) {

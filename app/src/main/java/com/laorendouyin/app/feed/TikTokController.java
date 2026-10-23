@@ -12,7 +12,7 @@ import com.laorendouyin.app.R;
 import xyz.doikki.videoplayer.controller.BaseVideoController;
 
 /**
- * myDVQ 极简控制层 —— 一个**空壳**。
+ * shilaoVD 极简控制层 —— 一个**空壳**。
  *
  * 原基座（腕上音符）在这里挂了双击 ±10s 手势和全屏开关；本项目全部移除：
  *   - 双击 seek：删（对不识字的使用者没有意义，且易误触）

@@ -15,7 +15,7 @@ import xyz.doikki.videoplayer.controller.IControlComponent;
 import xyz.doikki.videoplayer.player.VideoView;
 
 /**
- * myDVQ 极简视频层 —— **只有画面与封面，没有任何按钮、文字或手势**。
+ * shilaoVD 极简视频层 —— **只有画面与封面，没有任何按钮、文字或手势**。
  *
  * 设计约束（本项目的存在理由）：使用者是不识字的人，目标是"开机就能看、只会上下滑"。
  * 因此这里刻意**不**包含原基座（腕上音符）里的这些东西：

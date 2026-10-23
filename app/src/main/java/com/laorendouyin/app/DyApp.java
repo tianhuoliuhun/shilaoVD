@@ -8,7 +8,7 @@ import com.laorendouyin.app.util.CrashShield;
 /**
  * 全局初始化：日志 + 崩溃护盾（无 adb 环境的观测底座）。
  *
- * myDVQ 相对原基座（腕上音符）删掉的两件事：
+ * shilaoVD 相对原基座（腕上音符）删掉的两件事：
  *   - 会话 cookie 回写 WebView CookieStore（本项目没有登录，也没有 WebView）
  *   - debug 包开 WebView 远程调试（同上）
  */
@@ -88,6 +88,6 @@ public class DyApp extends Application {
         //    （踩过：先设 TLS1.2 再 setDefaultSSLSocketFactory("TLS") → 又退回 1.0）
         com.laorendouyin.app.util.TlsCompat.install(this);
         installPlayerKernel();
-        AppLog.i("app", "应用启动（myDVQ 极简版）");
+        AppLog.i("app", "应用启动（shilaoVD 极简版）");
     }
 }

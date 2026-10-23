@@ -5,8 +5,8 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const SIGN_DIR = 'D:/Projects/myDVQ/.base/wanshang-yinfu/app/src/main/assets/sign';
-const OUT = 'D:/Projects/myDVQ/probe/result.json';
+const SIGN_DIR = '../.base/wanshang-yinfu/app/src/main/assets/sign';
+const OUT = './result.json';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36';
 
 const log = [];

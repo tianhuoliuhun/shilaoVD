@@ -3,7 +3,7 @@ package com.laorendouyin.app.net;
 // DouyinApi 里几个纯函数/解析边界的单测（离线，不联网）。
 // 重点：JsonNull 边界（推荐流里混有图文贴，video 为 null）与**视频宽高解析**（横竖屏分流靠它）。
 //
-// myDVQ 删减：评论时间格式化、作者头像相关用例随对应功能一起移除。
+// shilaoVD 删减：评论时间格式化、作者头像相关用例随对应功能一起移除。
 
 import com.laorendouyin.app.feed.FeedVideo;
 
@@ -79,7 +79,7 @@ public class DouyinApiParseTest {
         assertTrue(DouyinApi.parseFeed(json).isEmpty());
     }
 
-    // ---- 视频宽高与方向判定（myDVQ 的"横竖屏分流"全靠这两个）----
+    // ---- 视频宽高与方向判定（shilaoVD 的"横竖屏分流"全靠这两个）----
 
     /** 宽高必须解析出来，且横竖判定与 matchesOrientation 要一致 */
     @Test

@@ -3,7 +3,7 @@
 const fs = require('fs');
 const { createSigner, baseParams, getTtwid, UA } = require('./signer.js');
 
-const OUT = 'D:/Projects/myDVQ/probe/play.json';
+const OUT = './play.json';
 function say(s) { process.stdout.write(s.replace(/[^\x20-\x7e\n]/g, '?') + '\n'); }
 
 // 照 DouyinApi.urlFromAddr：优先 www.douyin.com 跳转候选，否则用 uri 自拼

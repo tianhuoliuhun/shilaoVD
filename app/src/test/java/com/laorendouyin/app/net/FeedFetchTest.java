@@ -3,7 +3,7 @@ package com.laorendouyin.app.net;
 // 联网冒烟测试：真实拉信息流（仅 -Dnetwork.test=true 时执行，默认 Assume 跳过）
 // 这是数据层的端到端验证：Rhino 签名 + OkHttp 请求 + Gson 解析全链路。
 //
-// myDVQ 新增：**横竖屏分流是否真的生效**的联网验证（见最后一个用例）。
+// shilaoVD 新增：**横竖屏分流是否真的生效**的联网验证（见最后一个用例）。
 
 import com.laorendouyin.app.feed.FeedVideo;
 import com.laorendouyin.app.sign.Signer;
