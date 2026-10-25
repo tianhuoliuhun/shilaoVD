@@ -869,35 +869,37 @@ public class FeedActivity extends UiActivity {
         return new String(bos.toByteArray(), Charset.forName("UTF-8"));
     }
 
-    // ---------- 沉浸式全屏 ----------
+    // ---------- 全屏（只藏状态栏，导航栏常显）----------
 
     /**
-     * 隐藏状态栏与导航栏，并用 **IMMERSIVE_STICKY** 降低系统手势误触。
+     * 隐藏**状态栏**，但**刻意保留系统导航栏**（底部「返回 / 主页 / 最近任务」那条）。
      *
-     * 为什么必须做：**横屏时"从下往上滑"正好是系统的「回到主屏」手势** ——
-     * 用户想切下一条视频，系统却把他送回桌面，主观感受就是"划不动"（本机实测复现过：
-     * 一次上滑直接让 App 进了后台，日志里是 PAUSED→PLAYING）。
-     * 沉浸模式下，边缘/底部滑动**第一次只会唤出系统栏**，手势不生效 ——
-     * 要再滑一次才会触发系统操作，这就把误触挡掉了。
+     * 为什么保留导航栏（2026-10-25 用户明确要求「强制显示底栏」）：
+     * 本 App 的用户是不识字的老人，屏幕上没有任何按钮和文字，**系统导航栏是他们唯一的出路**。
+     * 之前用 IMMERSIVE_STICKY 把它一起藏了，屏幕就变成完全跳不出去的「死画面」，
+     * 只能靠手势盲猜 —— 对老人等于没有退路。
      *
-     * 顺带的好处：刷视频本来就该满屏，状态栏和导航栏纯属干扰。
+     * 因此这里**不带** HIDE_NAVIGATION / LAYOUT_HIDE_NAVIGATION / IMMERSIVE_STICKY 三个 flag：
+     * - 状态栏照旧隐藏（FULLSCREEN），视频仍是满屏，顶部信息栏位置不变；
+     * - 导航栏常显，且窗口不延伸到它下面（无 LAYOUT_HIDE_NAVIGATION），
+     *   所以底部内容（tv_feed_hint）会自然落在导航栏上方，不会被遮住。
+     *
+     * ⚠️ 代价：横屏 + 手势导航时，底部上滑可能被系统识别为「回主屏」而误触退到桌面
+     *    （原来 IMMERSIVE_STICKY 就是用来挡这个的）。三键导航不受影响。
      */
-    private void hideSystemBars() {
+    private void hideStatusBar() {
         android.view.View decor = getWindow().getDecorView();
         decor.setSystemUiVisibility(
-                android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                         | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                         | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN);
     }
 
-    /** 每次拿回焦点都重挂一次：沉浸态会被系统的弹窗/切后台清掉，需要自动恢复 */
+    /** 每次拿回焦点都重挂一次：状态栏会被系统的弹窗/切后台重新拉出来，需要自动恢复 */
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) hideSystemBars();
+        if (hasFocus) hideStatusBar();
     }
 
     /** 刷视频要常亮：不然看着看着黑屏 */
