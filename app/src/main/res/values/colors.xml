@@ -41,6 +41,14 @@
     <!-- 品牌点缀色：Bili 粉（用户拍板）。
          ⚠️ 只允许出现在三处：statusBar、播放进度条、点赞/收藏激活态。 -->
     <color name="accent">#FBFB8787</color>
+    <!-- ⚠️ accent 的 alpha 是 0xFB(251)，**不是完全不透明**。
+         Android 6.0 的 Activity.onApplyThemeResource 会拿主题的 android:colorPrimary
+         去构造 TaskDescription，并在 TaskDescription 构造器里硬性校验 alpha==255，
+         半透明直接抛 RuntimeException「A TaskDescription's primary color should be opaque」
+         → 开屏即崩（锤子 SM901 / Android 6.0.1 实测，2026-11-24）。
+         Android 7+ 放宽了这条校验，所以在 Android 15 的机器上一直没暴露。
+         凡是系统要拿去当 TaskDescription / 最近任务卡片色的地方，一律用这个不透明版。 -->
+    <color name="accent_solid">#FFFB8787</color>
     <!-- 点缀色的暗档：未激活态描边等需要"低调一点"的场景 -->
     <color name="accent_dim">#66FB8787</color>
 
