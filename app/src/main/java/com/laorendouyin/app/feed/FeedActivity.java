@@ -114,6 +114,16 @@ public class FeedActivity extends UiActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // ---------- 关于锁屏（2026-11-24）----------
+        // 🔴 这里**刻意不加** FLAG_DISMISS_KEYGUARD / FLAG_SHOW_WHEN_LOCKED：
+        //    锤子 SM901（Android 6.0.1）实测会打
+        //      ActivityThread: checkShowWhenLockedPermission and finish ComponentInfo{...FeedActivity}
+        //    → **Activity 被系统当场 finish**，界面闪一下退回上一个页面，比不加还糟。
+        //    两个 flag 都会触发这个校验（去掉 SHOW_WHEN_LOCKED 后仍然复现，已用日志时间戳确认）。
+        //
+        //    真正管用的是 ScreenOnService 里的 KeyguardManager.disableKeyguard()——
+        //    那是 API 25 及以下「禁用锁屏」的正规做法，从根上让锁屏不再出现，
+        //    而不是让某个 Activity 去跟锁屏抢。
         setContentView(R.layout.activity_feed);
         // 先定方向：后面拉流、过滤、缓存全按它走
         mWantLandscape = isLandscapeScreen();

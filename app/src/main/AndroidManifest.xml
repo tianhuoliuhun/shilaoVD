@@ -25,6 +25,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!--
+      锁屏穿透（2026-11-24）：配合 FeedActivity 的 FLAG_DISMISS_KEYGUARD，
+      让无密码的「滑动锁屏」在亮屏后直接解除 —— 老人不用再上滑。
+      normal 级权限，安装即授予，不需要运行时申请。
+      ⚠️ 它**不能**绕过有密码的锁屏（那需要 Device Owner 的 setKeyguardDisabled，API 23+）。
+    -->
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
 
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
@@ -87,6 +94,15 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!--
+          亮屏监听服务：ACTION_SCREEN_ON 只能动态注册，长期监听必须常驻服务。
+          ⚠️ 只在 API < 26 启动（DyApp 里判断）—— Android 8+ 后台服务受限、
+             Android 10+ 禁止后台启动 Activity，而且新系统本来也不需要这招。
+        -->
+        <service
+            android:name=".ScreenOnService"
+            android:exported="false" />
     </application>
 
 </manifest>

@@ -89,5 +89,28 @@ public class DyApp extends Application {
         com.laorendouyin.app.util.TlsCompat.install(this);
         installPlayerKernel();
         AppLog.i("app", "应用启动（shilaoVD 极简版）");
+        startScreenOnGuard();
+    }
+
+    /**
+     * 启动「亮屏即拉起视频」的服务（锁屏穿透的一环）。
+     *
+     * 只在 API < 26 启动，原因有三：
+     *   ① Android 8.0 起后台服务受限，普通 startService 在 Application.onCreate 里会抛
+     *      IllegalStateException（要前台服务 + 常驻通知）；
+     *   ② Android 10 起禁止后台启动 Activity，就算启动了也拉不起来；
+     *   ③ 这招本来就是给老设备用的 —— 新系统的锁屏要么能关（Device Owner），
+     *      要么用户本来就有密码，强拉界面反而打扰。
+     * 所以新系统上直接跳过，静默不做任何事。
+     */
+    private void startScreenOnGuard() {
+        if (android.os.Build.VERSION.SDK_INT >= 26) return;
+        try {
+            startService(new android.content.Intent(this, ScreenOnService.class));
+            AppLog.i("lock", "亮屏监听服务已启动");
+        } catch (Throwable t) {
+            // 起不来不影响看视频，只是亮屏后仍需要上滑解锁 —— 不能让启动流程挂掉
+            AppLog.i("lock", "启动亮屏服务失败: " + t);
+        }
     }
 }
