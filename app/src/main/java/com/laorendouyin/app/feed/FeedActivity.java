@@ -912,10 +912,80 @@ public class FeedActivity extends UiActivity {
         if (hasFocus) hideStatusBar();
     }
 
-    /** 刷视频要常亮：不然看着看着黑屏 */
+    // ---------- 常亮额度：连续播满 30 分钟就把屏幕还给系统 ----------
+
+    /**
+     * 连续播放满这么久后**不再强制常亮**，由系统的熄屏超时去黑屏。
+     *
+     * 为什么需要：老人常常看着看着就睡着，屏幕亮一整夜既费电又怕烧屏。
+     *
+     * 为什么是「取消常亮」而不是「主动锁屏」：普通 App 没有熄屏权限
+     * （PowerManager.goToSleep() 要 DEVICE_POWER 签名权限，第三方拿不到）。
+     * 而老人看视频时屏幕上**没有触摸**，系统的「用户活动」计时器早就超时了，
+     * 一旦清掉 FLAG_KEEP_SCREEN_ON 就会**立即熄屏** —— 效果等价，且零权限、零副作用。
+     *
+     * ⚠️ 依赖系统的 screen_off_timeout：若某台机器把它设得很长，
+     *    且老人在这个周期内摸过屏幕，黑屏会推迟到那次触摸之后满一个超时周期。
+     *    这是可接受的 —— 有触摸恰恰说明人还醒着。
+     */
+    private static final long KEEP_SCREEN_ON_BUDGET_MS = 30L * 60 * 1000;
+
+    private final android.os.Handler mScreenBudgetHandler =
+            new android.os.Handler(android.os.Looper.getMainLooper());
+
+    /** 本轮常亮额度是否已用完（true = 不再强撑，让系统超时熄屏） */
+    private boolean mScreenOnBudgetUsed;
+
+    private final Runnable mScreenOnExpired = new Runnable() {
+        @Override
+        public void run() {
+            mScreenOnBudgetUsed = true;
+            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            com.laorendouyin.app.util.AppLog.i(
+                    "feed", "连续播放满 30 分钟 → 取消常亮，交给系统熄屏超时");
+        }
+    };
+
+    /** 刷视频要常亮：不然看着看着黑屏。额度用完后不再强撑。 */
     @Override
     protected boolean keepScreenOnWhileVisible() {
-        return true;
+        return !mScreenOnBudgetUsed;
+    }
+
+    /**
+     * 重新开始 30 分钟额度。
+     *
+     * 两个触发点：① 回到前台（onResume）；② **用户摸了一下屏幕**（dispatchTouchEvent）。
+     * 后者是关键 —— 判断「老人是不是睡着了」最可靠的信号就是**还有没有触摸**：
+     * 手指一碰就说明人还醒着，已经亮着的屏幕不该黑掉。
+     */
+    private void resetScreenOnBudget() {
+        mScreenBudgetHandler.removeCallbacks(mScreenOnExpired);
+        mScreenBudgetHandler.postDelayed(mScreenOnExpired, KEEP_SCREEN_ON_BUDGET_MS);
+    }
+
+    /**
+     * 任何触摸都算「人还醒着」→ 重置额度。
+     *
+     * 只认 ACTION_DOWN（手指按下那一刻）：滑动时 MOVE 事件一秒几十个，
+     * 每个都去动 Handler 纯属浪费；一次按下重置一次就够。
+     *
+     * ⚠️ 必须把事件原样交给 super，否则会吃掉 ViewPager 的翻页手势。
+     */
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        if (ev.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+            if (mScreenOnBudgetUsed) {
+                // 额度已经用完（常亮被撤掉了）→ 把常亮重新挂上，不然屏幕会继续黑着
+                mScreenOnBudgetUsed = false;
+                getWindow().addFlags(
+                        android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                com.laorendouyin.app.util.AppLog.i(
+                        "feed", "用户触摸屏幕 → 恢复常亮并重新计时 30 分钟");
+            }
+            resetScreenOnBudget();
+        }
+        return super.dispatchTouchEvent(ev);
     }
 
     // ---------- 顶部信息栏（时间 / 日期 / 星期 / 节日）----------
@@ -1061,7 +1131,11 @@ public class FeedActivity extends UiActivity {
 
     @Override
     protected void onResume() {
+        // 回到前台算新一轮：先清掉「额度已用完」，再让基类 onResume 重新挂上常亮
+        mScreenOnBudgetUsed = false;
         super.onResume();
+        // 重启 30 分钟常亮额度（在后台的时间不计入）
+        resetScreenOnBudget();
         if (mVideoView != null) mVideoView.resume();
         // 预加载跟着页面可见性走：后台时整队停，回来时把没预热好的补齐
         if (mPreloadManager != null) mPreloadManager.resumeAll();
@@ -1072,6 +1146,8 @@ public class FeedActivity extends UiActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        // 后台不算「连续播放」，额度计时停掉
+        mScreenBudgetHandler.removeCallbacks(mScreenOnExpired);
         // ⚠️ 原来只停了播放器：预加载队列不管，用户按 Home 走后还在继续下（每条最多 1MB）
         if (mPreloadManager != null) mPreloadManager.pauseAll();
         if (mVideoView != null) mVideoView.pause();
@@ -1082,6 +1158,7 @@ public class FeedActivity extends UiActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        mScreenBudgetHandler.removeCallbacks(mScreenOnExpired);
         if (mVideoView != null) mVideoView.release();
         if (mPreloadManager != null) mPreloadManager.removeAllPreloadTask();
         // 退出即清空视频缓存：播放用的临时片段不应在设备上留下副本（见 ProxyVideoCacheManager.clearAll）
